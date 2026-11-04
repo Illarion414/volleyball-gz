@@ -136,7 +136,7 @@
 
   /* ---------- рейтинг ---------- */
   .tabs2 { display: flex; background: var(--white); border-radius: 999px; padding: 4px; margin-bottom: 14px; }
-  .tabs2 button { flex: 1; border: 0; background: none; border-radius: 999px; padding: 9px 6px; font-weight: 600; font-size: 14px; color: var(--muted); }
+  .tabs2 button { flex: 1 1 auto; border: 0; background: none; border-radius: 999px; padding: 9px 4px; font-weight: 600; font-size: 13px; color: var(--muted); white-space: nowrap; }
   .tabs2 button.on { background: var(--green); color: var(--white); }
   .lb { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line); }
   .lb:last-child { border-bottom: 0; }
@@ -164,6 +164,7 @@
   .stats3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
   .st { background: var(--white); border-radius: 16px; padding: 12px; }
   .st.wide { grid-column: span 3; }
+  .st.w2 { grid-column: span 2; }
   .st b { display: block; font: 800 24px/1 var(--display); margin-bottom: 4px; }
   .st span { font-size: 12px; color: var(--muted); }
 
@@ -627,8 +628,13 @@ function viewBoard() {
   if (!S.stats) { loadStats(); return { html: '<h2>Рейтинг</h2><div class="empty">Считаю…</div>' }; }
   if (S.stats.error) return { html: `<h2>Рейтинг</h2><div class="panel pad"><div class="warn">${esc(S.stats.error)}</div></div>` };
   const st = S.stats, admin = S.role !== 'player', myId = S.me && S.me.id;
-  const tabs = [['xp', 'Активность'], ['rating', 'Сила'], ['streak', 'Серии']];
+  const tabs = [['xp', 'Активность'], ['rating', 'Сила'], ['streak', 'Серии'], ['train', 'Тренировки']];
   let rows = [], note = '';
+  if (S.board === 'train') {   // тренировки: отдельный трек, в субботний опыт не входят
+    rows = st.xp.filter(r => r.trQ > 0).sort((a, b) => b.trQ - a.trQ || b.trAll - a.trAll)
+      .map(r => ({ id: r.id, name: r.name, v: r.trQ, u: plural(r.trQ, 'тренировка', 'тренировки', 'тренировок') }));
+    note = `Тренировки за сезон ${quarterName(st.quarter)}. Это отдельный зачёт, в субботний опыт он не входит.`;
+  }
   if (S.board === 'xp') {
     rows = st.xp.filter(r => r.xpQ > 0).map(r => ({ id: r.id, name: r.name, v: r.xpQ, u: 'XP' }));
     note = `Опыт за сезон ${quarterName(st.quarter)}. Каждый квартал всё начинается заново.`;
@@ -691,9 +697,11 @@ function statsView(m, head) {
   if (!m) return { html: `${head || '<h2>Мои итоги</h2>'}<div class="panel pad">Итоги появятся после первой игры. Увидимся в субботу!</div>` };
   const L = level(m.xpAll);
   const pct = L.next ? Math.round(100 * (m.xpAll - L.from) / (L.next - L.from)) : 100;
+  const tr = m.trQ || 0;
   const rating = m.calib
-    ? `<div class="st wide"><b>${m.sets} из 10</b><span>сетов до рейтинга силы, идёт калибровка</span></div>`
-    : `<div class="st wide"><b>${m.r}</b><span>рейтинг силы, за сезон ${m.dQ >= 0 ? '+' : ''}${m.dQ}</span></div>`;
+    ? `<div class="st w2"><b>${m.sets} из 10</b><span>сетов до рейтинга силы, идёт калибровка</span></div>`
+    : `<div class="st w2"><b>${m.r}</b><span>рейтинг силы, за сезон ${m.dQ >= 0 ? '+' : ''}${m.dQ}</span></div>`;
+  const train = `<div class="st"><b>${tr}</b><span>${plural(tr, 'тренировка', 'тренировки', 'тренировок')} за сезон</span></div>`;
   return { html: `${head || ''}
     <div class="hero"><div class="lvl">Уровень «${L.name}»</div>
       <div class="xp">${m.xpQ}<small>XP за сезон</small></div>
@@ -703,7 +711,7 @@ function statsView(m, head) {
       <div class="st"><b>${m.arrQ}</b><span>${plural(m.arrQ, 'приход', 'прихода', 'приходов')} за сезон</span></div>
       <div class="st"><b>${m.streak}</b><span>серия, лучшая ${m.best}</span></div>
       <div class="st"><b>${m.winsQ}</b><span>${plural(m.winsQ, 'победа', 'победы', 'побед')} в сетах</span></div>
-      ${rating}
+      ${train}${rating}
     </div>
     ${m.placeXp ? `<div class="panel pad">Ты на ${m.placeXp}-м месте по активности за сезон.</div>` : ''}` };
 }
