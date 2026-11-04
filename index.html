@@ -176,6 +176,7 @@
     font: 800 22px/1 var(--display); color: var(--muted); flex: none; }
   .photo label { color: var(--green-ink); font-weight: 600; cursor: pointer; }
   .photo input { display: none; }
+  .photo b { font: 800 19px/1.2 var(--display); }
   .cons { display: flex; gap: 12px; align-items: flex-start; margin: 16px 0 6px; font-size: 15px; }
   .cons input { width: 22px; height: 22px; accent-color: var(--green); flex: none; margin-top: 1px; }
 
@@ -241,7 +242,8 @@ const S = {
   sets: [], maxNum: 0, pair: null,
   tab: 'att', pick: { w: null, l: null, low: false }, q: '',
   armed: null, err: null, loaded: false, offline: false, edit: null,
-  cal: null, stats: null, board: 'xp', scope: 'top', me: null
+  cal: null, stats: null, board: 'xp', scope: 'top', me: null,
+  self: { loaded: false, err: '', edit: false, stats: null }   // вкладка «Я» у админа
 };
 
 /* ---------- хранилище и связь с сервером ---------- */
@@ -376,6 +378,24 @@ async function loadStats() {
   if (S.tab === 'board' || S.tab === 'me') render();
 }
 
+// Вкладка «Я» у админа: своя карточка и свои итоги идут от имени Телеграма, а не по ключу.
+let selfBusy = false, selfStatsBusy = false;
+async function loadSelf() {
+  if (selfBusy) return;
+  selfBusy = true;
+  try { S.me = (await api('api_myCard')).me; S.self.err = ''; }
+  catch (e) { S.self.err = msg(e).replace(/^.*ОШИБКА:\s*/, ''); }
+  S.self.loaded = true; selfBusy = false;
+  if (S.tab === 'self') render();
+}
+async function loadSelfStats() {
+  if (selfStatsBusy) return;
+  selfStatsBusy = true;
+  try { S.self.stats = await api('api_myStats'); } catch (e) { S.self.stats = { error: msg(e) }; }
+  selfStatsBusy = false;
+  if (S.tab === 'self') render();
+}
+
 /* ---------- логика ---------- */
 const playerFrom = c => Object.assign({ count: 0, lastSeen: '' }, c, { name: (c.lastName + ' ' + c.firstName).trim() });
 const pname = id => (S.players.find(p => p.id === id) || { name: id }).name;
@@ -462,7 +482,8 @@ const ICONS = {
   card: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.2-4 4.3-6 8-6s6.8 2 8 6"/>',
   me: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'
 };
-const TAB_NAMES = { att: 'Пришли', teams: 'Команды', set: 'Сет', log: 'Журнал', board: 'Рейтинг', card: 'Карточка', me: 'Мои итоги' };
+ICONS.self = ICONS.card;
+const TAB_NAMES = { att: 'Пришли', teams: 'Команды', set: 'Сет', log: 'Журнал', board: 'Рейтинг', card: 'Карточка', me: 'Мои итоги', self: 'Я' };
 const editIcon = '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></svg>';
 
 function render() {
@@ -472,7 +493,7 @@ function render() {
   document.querySelectorAll('#typeSeg button').forEach(b => b.classList.toggle('on', b.dataset.type === S.type));
   $('#dTitle').textContent = admin ? (dateTitle(S.date) || 'Загрузка') : 'Волейбол Гуанчжоу';
   $('#dWeek').textContent = admin ? weekday(S.date) : '';
-  const tabs = admin ? ['att', 'teams', 'set', 'log', 'board'] : ['card', 'me', 'board'];
+  const tabs = admin ? ['att', 'teams', 'set', 'log', 'board', 'self'] : ['card', 'me', 'board'];
   setHTML($('#tabbar'), tabs.map(t => {
     const hide = admin && S.type === 'тренировка' && (t === 'teams' || t === 'set');
     return `<button data-tab="${t}" class="${S.tab === t ? 'on' : ''}" ${hide ? 'hidden' : ''}><svg viewBox="0 0 24 24">${ICONS[t]}</svg>${TAB_NAMES[t]}</button>`;
@@ -488,7 +509,7 @@ function render() {
     setHTML(app, viewCard(S.edit, true));
     act = `<button class="btn" data-a="cancelEdit">Отмена</button><button class="btn go" data-a="saveCard">Сохранить</button>`;
   } else {
-    const v = ({ att: viewAtt, teams: viewTeams, set: viewSet, log: viewLog, board: viewBoard, card: viewMyCard, me: viewMe })[S.tab]();
+    const v = ({ att: viewAtt, teams: viewTeams, set: viewSet, log: viewLog, board: viewBoard, card: viewMyCard, me: viewMe, self: viewSelf })[S.tab]();
     setHTML(app, v.html); act = v.action || '';
   }
   const ab = $('#action');
@@ -640,14 +661,40 @@ function viewBoard() {
 
 function viewMe() {
   if (!S.stats) { loadStats(); return { html: '<h2>Мои итоги</h2><div class="empty">Считаю…</div>' }; }
-  const m = S.stats.me || null;
-  if (!m) return { html: '<h2>Мои итоги</h2><div class="panel pad">Итоги появятся после первой игры. Увидимся в субботу!</div>' };
+  return statsView(S.stats.me || null, '');
+}
+
+// Шапка с фото и именем над итогами во вкладке «Я» у админа.
+function selfHead(p) {
+  const photo = p.photoNew || p.photo, initials = ((p.lastName || ' ')[0] + (p.firstName || ' ')[0]).trim();
+  return `<div class="photo"><div class="ava" style="${photo ? `background-image:url('${esc(photo)}')` : ''}">${photo ? '' : esc(initials)}</div>
+    <b>${esc((p.lastName + ' ' + p.firstName).trim())}</b></div>`;
+}
+
+function viewSelf() {
+  if (!S.self.loaded) { loadSelf(); return { html: '<h2>Я</h2><div class="empty">Загружаю…</div>' }; }
+  if (S.self.err) return { html: `<h2>Я</h2><div class="panel pad">${esc(S.self.err)}</div>` };
+  if (!S.me || !S.me.id) return viewMyCard();   // ещё не заполнял: сразу анкета
+  if (S.self.edit) {
+    const v = viewMyCard();
+    v.action = `<button class="btn" data-a="selfCancel">Отмена</button>` + v.action;
+    return v;
+  }
+  if (!S.self.stats) { loadSelfStats(); return { html: '<h2>Я</h2><div class="empty">Считаю…</div>' }; }
+  if (S.self.stats.error) return { html: `<h2>Я</h2><div class="panel pad"><div class="warn">${esc(S.self.stats.error)}</div></div>` };
+  const v = statsView(S.self.stats.me || null, selfHead(S.me));
+  v.action = `<button class="btn" data-a="selfEdit">Моя карточка</button>`;
+  return v;
+}
+
+function statsView(m, head) {
+  if (!m) return { html: `${head || '<h2>Мои итоги</h2>'}<div class="panel pad">Итоги появятся после первой игры. Увидимся в субботу!</div>` };
   const L = level(m.xpAll);
   const pct = L.next ? Math.round(100 * (m.xpAll - L.from) / (L.next - L.from)) : 100;
   const rating = m.calib
     ? `<div class="st wide"><b>${m.sets} из 10</b><span>сетов до рейтинга силы, идёт калибровка</span></div>`
     : `<div class="st wide"><b>${m.r}</b><span>рейтинг силы, за сезон ${m.dQ >= 0 ? '+' : ''}${m.dQ}</span></div>`;
-  return { html: `
+  return { html: `${head || ''}
     <div class="hero"><div class="lvl">Уровень «${L.name}»</div>
       <div class="xp">${m.xpQ}<small>XP за сезон</small></div>
       <div class="bar"><i style="width:${pct}%"></i></div>
@@ -669,8 +716,8 @@ function viewCard(p, adminMode) {
   <h2>${adminMode ? (p.id ? 'Карточка игрока' : 'Новый игрок') : 'Моя карточка'}</h2>
   <p class="lead">${adminMode ? 'Фамилия и имя обязательны, остальное можно дополнить позже.' : 'Заполни один раз, чтобы попасть в рейтинг и итоги субботы.'}</p>
   <div class="panel pad">
-    ${adminMode ? '' : `<div class="photo"><div class="ava" id="ava" style="${photo ? `background-image:url('${esc(photo)}')` : ''}">${photo ? '' : esc(initials)}</div>
-      <label>${photo ? 'Заменить фото' : 'Загрузить фото'}<input type="file" id="f_photo" accept="image/*"></label></div>`}
+    <div class="photo"><div class="ava" id="ava" style="${photo ? `background-image:url('${esc(photo)}')` : ''}">${photo ? '' : esc(initials)}</div>
+      <label>${photo ? 'Заменить фото' : 'Загрузить фото'}<input type="file" id="f_photo" accept="image/*"></label></div>
     ${f('f_last', 'Фамилия', p.lastName)}
     ${f('f_first', 'Имя', p.firstName)}
     ${f('f_mid', 'Отчество', p.middleName)}
@@ -703,6 +750,7 @@ function saveCard() {
     p.lastName.toLowerCase() === card.lastName.toLowerCase() && p.firstName.toLowerCase() === card.firstName.toLowerCase() &&
     (p.middleName || '').toLowerCase() === card.middleName.toLowerCase() && (p.dob || '') === card.dob);
   if (same) { toast('Такой игрок уже есть. Добавь отчество или дату рождения, чтобы различать'); return; }
+  if (S.edit.photoNew) card.photo = S.edit.photoNew;   // фото уходит на сервер, только если его выбрали заново
   if (S.edit.id) {
     const p = S.players.find(x => x.id === S.edit.id);
     Object.assign(p, playerFrom(Object.assign({}, p, card)));
@@ -729,7 +777,13 @@ async function saveMyCard() {
   try {
     S.me = await api('api_saveMyCard', card);
     toast('Карточка сохранена. До встречи на площадке!');
-    S.tab = 'me'; S.stats = null;
+    if (S.role === 'player') { S.tab = 'me'; S.stats = null; }
+    else {   // админ: остаёмся во вкладке «Я» и обновляем себя в списке игроков
+      S.self.edit = false; S.self.stats = null; S.stats = null;
+      const p = S.players.find(x => x.id === S.me.id);
+      if (p) Object.assign(p, playerFrom(Object.assign({}, p, S.me)));
+      else S.players.push(playerFrom(S.me));
+    }
   } catch (e) { toast('Не сохранилось: ' + msg(e).replace(/^.*ОШИБКА:\s*/, '')); }
   render();
 }
@@ -774,6 +828,7 @@ document.addEventListener('click', e => {
   if (b.dataset.tab) {
     S.tab = b.dataset.tab; S.armed = null; S.edit = null;
     if (S.tab === 'board' || S.tab === 'me') S.stats = null;
+    if (S.tab === 'self') { S.self.stats = null; S.self.edit = false; }
     render(); window.scrollTo(0, 0); return;
   }
   if (b.dataset.type) {
@@ -798,6 +853,8 @@ document.addEventListener('click', e => {
     case 'cancelEdit': S.edit = null; render(); break;
     case 'saveCard': saveCard(); break;
     case 'saveMyCard': saveMyCard(); break;
+    case 'selfEdit': S.self.edit = true; render(); window.scrollTo(0, 0); break;
+    case 'selfCancel': S.self.edit = false; if (S.me) delete S.me.photoNew; render(); window.scrollTo(0, 0); break;
     case 'toTeams': S.tab = 'teams'; render(); window.scrollTo(0, 0); break;
     case 'toSet': S.tab = 'set'; render(); window.scrollTo(0, 0); break;
     case 'team':
@@ -835,8 +892,10 @@ document.addEventListener('change', e => {
     const k = Math.min(1, 400 / Math.max(img.width, img.height)), c = document.createElement('canvas');
     c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
     c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-    S.me = Object.assign({}, S.me, { photoNew: c.toDataURL('image/jpeg', 0.82) });
-    const ava = $('#ava'); ava.style.backgroundImage = `url('${S.me.photoNew}')`; ava.textContent = '';
+    const data = c.toDataURL('image/jpeg', 0.82);
+    if (S.edit) S.edit.photoNew = data;                     // админ правит чью-то карточку
+    else S.me = Object.assign({}, S.me, { photoNew: data }); // своя карточка
+    const ava = $('#ava'); ava.style.backgroundImage = `url('${data}')`; ava.textContent = '';
   };
   fr.readAsDataURL(e.target.files[0]);
 });
