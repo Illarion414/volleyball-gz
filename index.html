@@ -181,6 +181,32 @@
   .cons { display: flex; gap: 12px; align-items: flex-start; margin: 16px 0 6px; font-size: 15px; }
   .cons input { width: 22px; height: 22px; accent-color: var(--green); flex: none; margin-top: 1px; }
 
+  /* ---------- счёт за тренировку ---------- */
+  .crow { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
+  .crow span { color: var(--muted); }
+  .crow b { font: 600 16px/1 var(--display); }
+  .crow.big b { font: 800 26px/1 var(--display); color: var(--green-ink); }
+  .hintc { font-size: 12.5px; color: var(--muted); padding-top: 10px; }
+  .qrbox { display: flex; gap: 14px; align-items: center; }
+  .qr { width: 76px; height: 76px; flex: none; border-radius: 12px; background: var(--field) center/contain no-repeat; display: grid; place-items: center;
+    font: 800 18px/1 var(--display); color: var(--muted); box-shadow: inset 0 0 0 1.5px var(--line); }
+  .qrbox b { display: block; }
+  .qrbox small { display: block; font-size: 12.5px; color: var(--muted); margin: 2px 0 6px; }
+  .lnk { color: var(--green-ink); font-weight: 600; cursor: pointer; }
+  .lnk input { display: none; }
+  .msg { background: #EFFFE0; border-radius: 16px 16px 16px 4px; padding: 8px; margin-bottom: 6px; max-width: 320px; font-size: 14.5px; white-space: pre-wrap; box-shadow: 0 1px 1px rgba(0,0,0,.08); }
+  .msgqr { height: 150px; border-radius: 10px; background: #fff center/contain no-repeat; margin-bottom: 8px; }
+  .msg #msgText { padding: 0 4px 2px; }
+  .brow { display: flex; width: 100%; align-items: center; gap: 10px; border: 0; background: none; padding: 12px 0; border-bottom: 1px solid var(--line); text-align: left; }
+  .brow:last-child { border-bottom: 0; }
+  .brow[disabled] { color: inherit; cursor: default; }
+  .chip { font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 999px; background: var(--field); color: var(--muted); white-space: nowrap; }
+  .chip.ok { background: var(--green-soft); color: var(--green-ink); }
+  .chip.wait { background: #FFF2D9; color: #8A5300; }
+  .chip.bad { background: var(--red-soft); color: var(--red); }
+  .paid b { display: block; font: 800 20px/1.2 var(--display); }
+  .paid span { display: block; font-size: 13px; color: var(--muted); margin-top: 4px; }
+
   /* ---------- календарь ---------- */
   .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.38); z-index: 20; animation: fade .2s ease; }
   .sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 21; background: var(--white); border-radius: 24px 24px 0 0;
@@ -244,7 +270,8 @@ const S = {
   tab: 'att', pick: { w: null, l: null, low: false }, q: '',
   armed: null, err: null, loaded: false, offline: false, edit: null,
   cal: null, stats: null, board: 'xp', scope: 'top', me: null,
-  self: { loaded: false, err: '', edit: false, stats: null }   // вкладка «Я» у админа
+  self: { loaded: false, err: '', edit: false, stats: null },   // вкладка «Я» у админа
+  bill: null                                                     // экран «Счёт за тренировку»
 };
 
 /* ---------- хранилище и связь с сервером ---------- */
@@ -509,6 +536,9 @@ function render() {
   } else if (S.edit) {
     setHTML(app, viewCard(S.edit, true));
     act = `<button class="btn" data-a="cancelEdit">Отмена</button><button class="btn go" data-a="saveCard">Сохранить</button>`;
+  } else if (S.bill) {
+    const v = viewBill();
+    setHTML(app, v.html); act = v.action || '';
   } else {
     const v = ({ att: viewAtt, teams: viewTeams, set: viewSet, log: viewLog, board: viewBoard, card: viewMyCard, me: viewMe, self: viewSelf })[S.tab]();
     setHTML(app, v.html); act = v.action || '';
@@ -532,10 +562,10 @@ function viewAtt() {
   const n = S.present.size;
   const action = S.type === 'игра'
     ? `<button class="btn go" data-a="toTeams">Дальше: команды (${n})</button>`
-    : `<button class="btn" disabled>На тренировке ${n}. Сохраняется само</button>`;
+    : `<button class="btn go" data-a="bill" ${n ? '' : 'disabled'}>Счёт за тренировку (${n})</button>`;
   return { action, html: `
     <h2>${S.type === 'игра' ? 'Кто пришёл' : 'Кто на тренировке'}</h2>
-    <p class="lead">${S.type === 'игра' ? 'Отмечай только своих. Китайцы посчитаются сами.' : 'Отметь пришедших, больше ничего не нужно.'}</p>
+    <p class="lead">${S.type === 'игра' ? 'Отмечай только своих. Китайцы посчитаются сами.' : 'Отметь пришедших. После тренировки нажми «Счёт за тренировку».'}</p>
     <input id="q" class="search" placeholder="Фамилия, имя или ник" value="${esc(S.q)}" autocomplete="off">
     <div class="panel" id="attList">${attList()}</div>
     <button class="btn" data-a="new">Добавить нового игрока</button>` };
@@ -796,6 +826,137 @@ async function saveMyCard() {
   render();
 }
 
+/* ---------- счёт за тренировку ---------- */
+// Сумма с человека: аренда / участников + доплата за инвентарь, вверх до целого юаня (как на сервере).
+function billCalc(rent, n, extra) {
+  const per = rent / n, amount = Math.ceil(Math.round((per + extra) * 100) / 100);
+  return { perRent: Math.round(per * 100) / 100, amount, total: amount * n, rounding: Math.round((amount * n - rent - extra * n) * 100) / 100 };
+}
+const yuan = x => String(Math.round(x * 100) / 100).replace('.', ',') + ' ¥';
+const billText = (date, phrase, amount) => `🏐 Спасибо за тренировку ${dateTitle(date)}!\n\n${phrase}\n\n💳 К оплате: ${amount} ¥ на Алипей по QR-коду выше.\nПосле оплаты пришли сюда скриншот чека 📸`;
+const PAY_LABEL = { 'ждём чек': ['wait', 'ждём чек'], 'чек получен': ['ok', 'чек получен'], 'оплачено': ['ok', 'оплачено вручную'],
+  'нет в боте': ['bad', 'нет в боте, напиши сам'], 'не доставлено': ['bad', 'не доставлено'] };
+
+// Перед расчётом убеждаемся, что отметки уже на сервере: он считает по сохранённому списку.
+async function syncNow() {
+  saveNow(); flush();
+  const t0 = Date.now();
+  while ((outbox.length || flushing) && Date.now() - t0 < 15000) await new Promise(r => setTimeout(r, 300));
+  if (outbox.length) throw new Error('Отметки ещё не сохранились, проверь связь');
+}
+
+async function openBill() {
+  S.bill = { date: S.date, rent: '', st: null, busy: true, err: '', armed: false };
+  render(); window.scrollTo(0, 0);
+  try {
+    await syncNow();
+    const st = await api('api_billPreview', S.date, 0);
+    S.bill.st = st;
+    S.bill.rent = st.sent ? String(st.rent) : (st.lastRent ? String(st.lastRent) : '');
+  } catch (e) { S.bill.err = msg(e).replace(/^.*ОШИБКА:\s*/, ''); }
+  S.bill.busy = false; render();
+}
+
+function billCalcNow() {
+  const b = S.bill, st = b.st, rent = Number(String(b.rent).replace(',', '.')) || 0;
+  if (st.sent) return st.calc;
+  return rent > 0 && st.n ? billCalc(rent, st.n, st.extra) : null;
+}
+
+function billCalcHtml() {
+  const st = S.bill.st, c = billCalcNow();
+  if (!c) return '<div class="hintc">Введи стоимость аренды, и я посчитаю сумму с каждого</div>';
+  return `<div class="crow"><span>Аренда на человека</span><b>${yuan(c.perRent)}</b></div>
+    <div class="crow"><span>Инвентарь</span><b>+ ${yuan(st.extra)}</b></div>
+    <div class="crow big"><span>К оплате с человека</span><b>${c.amount} ¥</b></div>
+    <div class="crow"><span>Всего соберём с ${st.n}</span><b>${yuan(c.total)}</b></div>
+    <div class="hintc">Аренда ${yuan(c.total - st.extra * st.n - c.rounding)} + инвентарь ${yuan(st.extra * st.n)} + округление ${yuan(c.rounding)}. Расчёт видишь только ты, игрокам придёт только сумма.</div>`;
+}
+
+function billSendLabel() {
+  const st = S.bill.st, bots = st.people.filter(p => p.bot && (!st.sent || !p.status)).length;
+  return S.bill.armed ? `Точно разослать ${bots}?` : (st.sent ? `Дослать новым (${bots})` : `Разослать счёт (${bots})`);
+}
+
+function billCanSend() {
+  const st = S.bill.st, c = billCalcNow();
+  const bots = st.people.filter(p => p.bot && (!st.sent || !p.status)).length;
+  return !!(c && st.qr && bots && !S.bill.busy);
+}
+
+function viewBill() {
+  const b = S.bill, st = b.st;
+  const back = `<button class="btn" data-a="billClose">Назад</button>`;
+  if (!st) return { action: back, html: `<h2>Счёт за тренировку</h2>${b.err ? `<div class="panel pad"><div class="warn">${esc(b.err)}</div></div>` : '<div class="empty">Считаю…</div>'}` };
+  const c = billCalcNow();
+  const paid = st.people.filter(p => p.status === 'чек получен' || p.status === 'оплачено');
+  const people = st.people.map(p => {
+    let chip;
+    if (p.status) chip = PAY_LABEL[p.status] || ['', p.status];
+    else chip = p.bot ? ['', st.sent ? 'новый, ещё не отправлено' : 'получит сообщение'] : ['bad', 'нет в боте, напиши сам'];
+    const tap = st.sent && p.status ? `data-a="billMark" data-id="${esc(p.id)}"` : '';
+    return `<button class="brow" ${tap} ${tap ? '' : 'disabled'}><span class="nm">${esc(p.name)}</span><span class="chip ${chip[0]}">${chip[1]}</span></button>`;
+  }).join('');
+  const sentHead = st.sent ? `<div class="panel pad paid"><b>Оплатили ${paid.length} из ${st.n}</b>
+      <span>Собрано ${paid.reduce((s, p) => s + p.amount, 0)} из ${yuan(st.calc.total)} · разослано ${esc(st.sent.at)}</span>
+      <span>Нажми на игрока, чтобы отметить оплату вручную (наличными или чек пришёл не в бот).</span></div>` : '';
+  const action = `${back}${st.sent ? `<button class="btn" data-a="billRefresh">Обновить</button>` : ''}
+    ${!st.sent || st.people.some(p => p.bot && !p.status) ? `<button class="btn go" data-a="billSend" ${billCanSend() ? '' : 'disabled'}>${billSendLabel()}</button>` : ''}`;
+  return { action, html: `
+    <h2>Счёт за тренировку</h2>
+    <p class="lead">${esc(dateTitle(st.date))}, ${st.n} ${plural(st.n, 'участник', 'участника', 'участников')} без тебя</p>
+    ${sentHead}
+    <div class="panel pad">
+      ${st.sent ? `<div class="crow"><span>Аренда зала</span><b>${yuan(st.rent)}</b></div>`
+        : `<label class="f">Аренда зала, ¥<input id="f_rent" type="number" inputmode="decimal" min="0" step="1" value="${esc(b.rent)}" placeholder="например, 300"></label>`}
+      <div id="calc">${billCalcHtml()}</div>
+    </div>
+    <div class="panel pad qrbox"><div class="qr" style="${st.qr ? `background-image:url('${esc(st.qr)}')` : ''}">${st.qr ? '' : 'QR'}</div>
+      <div><b>QR-код Алипея</b><small>${st.qr ? 'Уйдёт картинкой в каждом сообщении' : 'Загрузи скриншот своего QR для оплаты'}</small>
+      <label class="lnk">${st.qr ? 'Заменить' : 'Загрузить QR'}<input type="file" id="f_qr" accept="image/*"></label></div></div>
+    <p class="sub-h">Так увидят игроки</p>
+    <div class="msg"><div class="msgqr" style="${st.qr ? `background-image:url('${esc(st.qr)}')` : ''}"></div><div id="msgText">${esc(c ? billText(st.date, st.phrase, c.amount) : 'Сообщение появится, когда введёшь аренду')}</div></div>
+    <p class="sub-h">Участники</p>
+    <div class="panel">${people || '<div class="empty">Никто не отмечен</div>'}</div>` };
+}
+
+async function billSend() {
+  if (!S.bill.armed) { S.bill.armed = true; render(); setTimeout(() => { if (S.bill && S.bill.armed) { S.bill.armed = false; render(); } }, 4000); return; }
+  S.bill.armed = false; S.bill.busy = true; render();
+  try {
+    await syncNow();
+    const st = await api('api_billSend', S.bill.date, Number(String(S.bill.rent).replace(',', '.')) || 0);
+    S.bill.st = st;
+    toast(`Разослано: ${st.result.sent}` + (st.result.failed.length ? `. Не дошло: ${st.result.failed.join(', ')}` : ''));
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+  } catch (e) { toast('Не разослано: ' + msg(e).replace(/^.*ОШИБКА:\s*/, '')); }
+  S.bill.busy = false; render();
+}
+
+async function billCall(fn, ...args) {
+  S.bill.busy = true;
+  try { S.bill.st = await api(fn, ...args); } catch (e) { toast(msg(e).replace(/^.*ОШИБКА:\s*/, '')); }
+  S.bill.busy = false; render();
+}
+
+// QR не сжимаем сильно: до 1000 px на белом фоне, чтобы код уверенно сканировался.
+function readQr(file) {
+  const img = new Image(), fr = new FileReader();
+  fr.onload = () => { img.src = fr.result; };
+  img.onload = async () => {
+    const k = Math.min(1, 1000 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+    let data = c.toDataURL('image/png');
+    if (data.length > 2500000) data = c.toDataURL('image/jpeg', 0.92);
+    toast('Загружаю QR…');
+    try { const r = await api('api_setQr', data); S.bill.st.qr = r.qr; toast('QR сохранён'); }
+    catch (e) { toast('QR не сохранился: ' + msg(e).replace(/^.*ОШИБКА:\s*/, '')); }
+    render();
+  };
+  fr.readAsDataURL(file);
+}
+
 /* ---------- календарь ---------- */
 function renderCal() {
   const o = $('#overlay');
@@ -834,7 +995,7 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-a],[data-tab],[data-type]');
   if (!b || b.disabled) return;
   if (b.dataset.tab) {
-    S.tab = b.dataset.tab; S.armed = null; S.edit = null;
+    S.tab = b.dataset.tab; S.armed = null; S.edit = null; S.bill = null;
     if (S.tab === 'board' || S.tab === 'me') S.stats = null;
     if (S.tab === 'self') { S.self.stats = null; S.self.edit = false; }
     render(); window.scrollTo(0, 0); return;
@@ -852,7 +1013,7 @@ document.addEventListener('click', e => {
     case 'calClose': S.cal = null; renderCal(); break;
     case 'calPrev': S.cal.m--; if (S.cal.m < 0) { S.cal.m = 11; S.cal.y--; } renderCal(); break;
     case 'calNext': S.cal.m++; if (S.cal.m > 11) { S.cal.m = 0; S.cal.y++; } renderCal(); break;
-    case 'pick': S.cal = null; renderCal(); if (b.dataset.d !== S.date) load(b.dataset.d); break;
+    case 'pick': S.cal = null; renderCal(); if (b.dataset.d !== S.date) { S.bill = null; load(b.dataset.d); } break;
     case 'toggle':
       if (S.present.has(id)) { S.present.delete(id); delete S.team[id]; } else S.present.add(id);
       scheduleSave(); render(); break;
@@ -861,6 +1022,11 @@ document.addEventListener('click', e => {
     case 'cancelEdit': S.edit = null; render(); break;
     case 'saveCard': saveCard(); break;
     case 'saveMyCard': saveMyCard(); break;
+    case 'bill': openBill(); break;
+    case 'billClose': S.bill = null; render(); window.scrollTo(0, 0); break;
+    case 'billSend': billSend(); break;
+    case 'billRefresh': billCall('api_billPreview', S.bill.date, 0); break;
+    case 'billMark': billCall('api_billMark', S.bill.date, id); break;
     case 'selfEdit': S.self.edit = true; render(); window.scrollTo(0, 0); break;
     case 'selfCancel': S.self.edit = false; if (S.me) delete S.me.photoNew; render(); window.scrollTo(0, 0); break;
     case 'toTeams': S.tab = 'teams'; render(); window.scrollTo(0, 0); break;
@@ -891,8 +1057,17 @@ document.addEventListener('click', e => {
 
 document.addEventListener('input', e => {
   if (e.target.id === 'q') { S.q = e.target.value; setHTML($('#attList'), attList()); }
+  if (e.target.id === 'f_rent' && S.bill) {
+    S.bill.rent = e.target.value; S.bill.armed = false;
+    const c = billCalcNow(), st = S.bill.st;
+    setHTML($('#calc'), billCalcHtml());
+    $('#msgText').textContent = c ? billText(st.date, st.phrase, c.amount) : 'Сообщение появится, когда введёшь аренду';
+    const btn = document.querySelector('[data-a="billSend"]');
+    if (btn) { btn.disabled = !billCanSend(); btn.textContent = billSendLabel(); }
+  }
 });
 document.addEventListener('change', e => {
+  if (e.target.id === 'f_qr' && e.target.files[0]) { readQr(e.target.files[0]); return; }
   if (e.target.id !== 'f_photo' || !e.target.files[0]) return;
   const img = new Image(), fr = new FileReader();
   fr.onload = () => { img.src = fr.result; };
