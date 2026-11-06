@@ -181,6 +181,54 @@
   .cons { display: flex; gap: 12px; align-items: flex-start; margin: 16px 0 6px; font-size: 15px; }
   .cons input { width: 22px; height: 22px; accent-color: var(--green); flex: none; margin-top: 1px; }
 
+  /* ---------- главная и календарь ---------- */
+  .back { width: 38px; height: 38px; flex: none; border: 0; border-radius: 50%; background: var(--field); display: grid; place-items: center; margin-right: -2px; }
+  .back[hidden] { display: none; }
+  .back svg { width: 22px; height: 22px; fill: none; stroke: var(--black); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+  .bigs { display: grid; gap: 12px; margin-bottom: 22px; }
+  .big { border: 0; border-radius: 22px; padding: 20px 18px; text-align: left; display: grid; grid-template-columns: 52px 1fr; column-gap: 14px; align-items: center; color: var(--white); }
+  .big svg { grid-row: span 2; width: 52px; height: 52px; padding: 12px; border-radius: 16px; background: rgba(255,255,255,.16); fill: none; stroke: currentColor; stroke-width: 2; }
+  .big b { font: 800 21px/1.15 var(--display); }
+  .big span { font-size: 14px; opacity: .85; }
+  .big.game { background: var(--green); }
+  .big.train { background: var(--black); }
+  .big:active { transform: scale(.98); }
+  .picktitle { font: 700 15px/1.2 var(--display); color: var(--green-ink); margin: -2px 0 10px; text-align: center; }
+  .drow { display: flex; width: 100%; align-items: center; gap: 10px; border: 0; background: none; padding: 12px 0; border-bottom: 1px solid var(--line); text-align: left; }
+  .drow:last-child { border-bottom: 0; }
+  .drow .dd { flex: 1; }
+  .drow .dd b { display: block; font: 700 16px/1.2 var(--display); }
+  .drow .dd small { color: var(--muted); font-size: 13px; }
+  .drow .cnt { font-size: 13px; color: var(--muted); text-align: right; min-width: 56px; }
+  .chip.game { background: var(--green-soft); color: var(--green-ink); }
+  .chip.train { background: var(--black); color: var(--white); }
+  .day.mine span { box-shadow: inset 0 0 0 2px var(--green); }
+  .day.mine.sel span { box-shadow: none; }
+  .legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 5px; vertical-align: 1px; }
+  .legend i.tr { background: var(--black); }
+  .legend i.ring { width: 10px; height: 10px; background: none; box-shadow: inset 0 0 0 2px var(--green); vertical-align: -1px; }
+  .calp .legend { margin-bottom: 0; }
+  .dhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .dhead b { display: block; font: 800 20px/1.15 var(--display); }
+  .dhead small { color: var(--muted); font-size: 13px; }
+  .dmeta { color: var(--muted); font-size: 14px; margin: 6px 0 4px; }
+  .me { border-radius: 14px; background: var(--field); padding: 10px 12px; margin-top: 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .me b { font: 700 15px/1.25 var(--display); }
+  .me span { font-size: 14px; color: var(--muted); }
+  .me.ok { background: var(--green-soft); } .me.ok b { color: var(--green-ink); }
+  .me.no { color: var(--muted); font-size: 14px; }
+  .sets { margin-top: 8px; }
+  .srow { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .srow:last-child { border-bottom: 0; }
+  .srow .no { width: 22px; color: var(--muted); font-size: 13px; }
+  .srow .res { flex: 1; font: 600 17px/1 var(--display); }
+  .srow .res i { font-style: normal; color: var(--tc); }
+  .srow .res i.w { text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 4px; }
+  .sets.pl .srow:not(.win):not(.loss) { opacity: .5; }   /* игроку чужие сеты бледнее */
+  .people { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
+  .people span { font-size: 13px; background: var(--field); border-radius: 999px; padding: 5px 10px; }
+  .dinfo .btn.inline { margin-top: 12px; }
+
   /* ---------- счёт за тренировку ---------- */
   .crow { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
   .crow span { color: var(--muted); }
@@ -242,6 +290,7 @@
 <header>
   <div class="stripe"></div>
   <div class="hrow">
+    <button class="back" id="backbtn" data-a="home" aria-label="На главную" hidden><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
     <button class="datebtn" id="datebtn" data-a="cal"><span class="d" id="dTitle">Загрузка</span><span class="s"><span id="dWeek"></span><span id="status"></span></span></button>
     <div class="seg" id="typeSeg"><button data-type="игра">Игра</button><button data-type="тренировка">Трен.</button></div>
   </div>
@@ -267,7 +316,8 @@ const S = {
   role: 'admin', date: '', today: '', teamSize: 6, type: 'игра',
   players: [], present: new Set(), team: {}, size: {}, days: {},
   sets: [], maxNum: 0, pair: null,
-  tab: 'att', pick: { w: null, l: null, low: false }, q: '',
+  tab: 'home', pick: { w: null, l: null, low: false }, q: '',
+  openType: null, calData: null, calSel: '', calM: null,          // главная и календарь
   armed: null, err: null, loaded: false, offline: false, edit: null,
   cal: null, stats: null, board: 'xp', scope: 'top', me: null,
   self: { loaded: false, err: '', edit: false, stats: null },   // вкладка «Я» у админа
@@ -366,7 +416,7 @@ async function load(date) {
     S.today = d.today;
     if (S.role === 'player') {
       S.me = d.me || null; S.loaded = true;
-      if (!['card', 'me', 'board'].includes(S.tab)) S.tab = S.me && S.me.id ? 'me' : 'card';
+      if (!['card', 'me', 'cal', 'board'].includes(S.tab)) S.tab = S.me && S.me.id ? 'me' : 'card';
       render(); return;
     }
     S.date = d.date; S.teamSize = d.teamSize || 6;
@@ -389,6 +439,12 @@ async function load(date) {
     S.maxNum = S.sets.reduce((m, s) => Math.max(m, s.num), 0);
     S.pair = nextPair() || (day && day.pair) || null;
     S.pick = { w: null, l: null, low: false };
+    if (S.openType) {   // пришли с главной: «Записать игру» или «Записать тренировку»
+      const empty = !(day && day.present && day.present.length) && !S.sets.length;
+      if (empty) S.type = S.openType;
+      else if (S.type !== S.openType) toast(`Этот день уже записан как ${S.type === 'игра' ? 'игра' : 'тренировка'}`);
+      S.openType = null;
+    }
     S.loaded = true;
     if (S.type === 'тренировка' && (S.tab === 'teams' || S.tab === 'set')) S.tab = 'att';
   } catch (e) {
@@ -511,17 +567,22 @@ const ICONS = {
   me: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'
 };
 ICONS.self = ICONS.card;
-const TAB_NAMES = { att: 'Пришли', teams: 'Команды', set: 'Сет', log: 'Журнал', board: 'Рейтинг', card: 'Карточка', me: 'Мои итоги', self: 'Я' };
+ICONS.home = '<path d="M3 11l9-7 9 7M5 9.5V20h5v-6h4v6h5V9.5"/>';
+ICONS.cal = '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>';
+const TAB_NAMES = { att: 'Пришли', teams: 'Команды', set: 'Сет', log: 'Журнал', board: 'Рейтинг', card: 'Карточка', me: 'Мои итоги', self: 'Я', home: 'Главная', cal: 'Календарь' };
+const DAY_TABS = ['att', 'teams', 'set', 'log'];
 const editIcon = '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></svg>';
 
 function render() {
   const admin = S.role !== 'player';
-  $('#typeSeg').hidden = !admin;
-  $('#datebtn').disabled = !admin;
+  const inDay = admin && DAY_TABS.includes(S.tab);   // внутри записи дня: отметки, команды, сеты, журнал
+  $('#typeSeg').hidden = !inDay;
+  $('#backbtn').hidden = !inDay;
+  $('#datebtn').disabled = true;
   document.querySelectorAll('#typeSeg button').forEach(b => b.classList.toggle('on', b.dataset.type === S.type));
-  $('#dTitle').textContent = admin ? (dateTitle(S.date) || 'Загрузка') : 'Волейбол Гуанчжоу';
-  $('#dWeek').textContent = admin ? weekday(S.date) : '';
-  const tabs = admin ? ['att', 'teams', 'set', 'log', 'board', 'self'] : ['card', 'me', 'board'];
+  $('#dTitle').textContent = inDay ? (dateTitle(S.date) || 'Загрузка') : 'Волейбол Гуанчжоу';
+  $('#dWeek').textContent = inDay ? weekday(S.date) : '';
+  const tabs = !admin ? ['card', 'me', 'cal', 'board'] : inDay ? DAY_TABS : ['home', 'cal', 'board', 'self'];
   setHTML($('#tabbar'), tabs.map(t => {
     const hide = admin && S.type === 'тренировка' && (t === 'teams' || t === 'set');
     return `<button data-tab="${t}" class="${S.tab === t ? 'on' : ''}" ${hide ? 'hidden' : ''}><svg viewBox="0 0 24 24">${ICONS[t]}</svg>${TAB_NAMES[t]}</button>`;
@@ -540,7 +601,8 @@ function render() {
     const v = viewBill();
     setHTML(app, v.html); act = v.action || '';
   } else {
-    const v = ({ att: viewAtt, teams: viewTeams, set: viewSet, log: viewLog, board: viewBoard, card: viewMyCard, me: viewMe, self: viewSelf })[S.tab]();
+    const v = ({ att: viewAtt, teams: viewTeams, set: viewSet, log: viewLog, board: viewBoard, card: viewMyCard, me: viewMe, self: viewSelf,
+      home: viewHome, cal: viewCalendar })[S.tab]();
     setHTML(app, v.html); act = v.action || '';
   }
   const ab = $('#action');
@@ -826,6 +888,105 @@ async function saveMyCard() {
   render();
 }
 
+/* ---------- главная и календарь ---------- */
+function openDay(date, type) {
+  S.bill = null; S.edit = null; S.q = ''; S.tab = 'att'; S.openType = type || null;
+  load(date); window.scrollTo(0, 0);
+}
+
+let calBusy = false;
+async function loadCal() {
+  if (calBusy) return;
+  calBusy = true;
+  try {
+    const d = await api('api_calendar');
+    const map = {};
+    d.days.forEach(x => { map[x.date] = x; });
+    S.calData = { days: d.days, map };
+    S.today = S.today || d.today;
+    if (!S.calSel) { const past = d.days.filter(x => x.date <= d.today); S.calSel = past.length ? past[past.length - 1].date : d.today; }
+    if (!S.calM) { const t = new Date(S.calSel + 'T12:00:00'); S.calM = { y: t.getFullYear(), m: t.getMonth() }; }
+  } catch (e) { S.calData = { err: msg(e).replace(/^.*ОШИБКА:\s*/, '') }; }
+  calBusy = false;
+  if (S.tab === 'cal' || S.tab === 'home') render();
+}
+
+const dayCache = {};
+async function loadDay(date) {
+  if (dayCache[date]) return;
+  dayCache[date] = 'loading';
+  try { dayCache[date] = await api('api_day', date); } catch (e) { dayCache[date] = { error: msg(e).replace(/^.*ОШИБКА:\s*/, '') }; }
+  if (S.tab === 'cal') render();
+}
+
+const wdName = d => new Date(d + 'T12:00:00').toLocaleDateString('ru-RU', { weekday: 'long' }).replace(/^./, c => c.toUpperCase());
+const typeChip = t => `<span class="chip ${t === 'игра' ? 'game' : 'train'}">${t === 'игра' ? 'игра' : 'тренировка'}</span>`;
+
+function viewHome() {
+  if (!S.calData) loadCal();
+  const recent = S.calData && S.calData.days ? S.calData.days.filter(d => d.date <= S.today).slice(-5).reverse() : [];
+  const rows = recent.map(d => `<button class="drow" data-a="openDay" data-d="${d.date}">
+      <span class="dd"><b>${esc(dateTitle(d.date))}</b><small>${esc(wdName(d.date))}</small></span>${typeChip(d.type)}
+      <span class="cnt">${d.n} чел.${d.sets ? `<br>${d.sets} ${plural(d.sets, 'сет', 'сета', 'сетов')}` : ''}</span></button>`).join('');
+  return { html: `
+    <h2>Что записываем?</h2>
+    <p class="lead">Выбери, что было, потом день в календаре.</p>
+    <div class="bigs">
+      <button class="big game" data-a="start" data-t="игра"><svg viewBox="0 0 24 24">${ICONS.set}</svg>
+        <b>Записать игру</b><span>Пришедшие, команды и сеты</span></button>
+      <button class="big train" data-a="start" data-t="тренировка"><svg viewBox="0 0 24 24">${ICONS.att}</svg>
+        <b>Записать тренировку</b><span>Пришедшие и счёт за зал</span></button>
+    </div>
+    <p class="sub-h">Последние дни</p>
+    <div class="panel">${!S.calData ? '<div class="empty">Загружаю…</div>' : S.calData.err ? `<div class="warn">${esc(S.calData.err)}</div>`
+      : rows || '<div class="empty">Пока ничего не записано</div>'}</div>` };
+}
+
+function viewCalendar() {
+  if (!S.calData) { loadCal(); return { html: '<h2>Календарь</h2><div class="empty">Загружаю…</div>' }; }
+  if (S.calData.err) return { html: `<h2>Календарь</h2><div class="panel pad"><div class="warn">${esc(S.calData.err)}</div></div>` };
+  const player = S.role === 'player', { y, m } = S.calM;
+  const grid = monthGrid(y, m, 'calSel', S.calSel, iso => { const d = S.calData.map[iso]; return d ? { type: d.type, mine: d.me } : null; });
+  return { html: `
+    <h2>Календарь</h2>
+    <div class="panel pad calp">
+      <div class="calh"><button class="arw" data-a="cmPrev" aria-label="Предыдущий месяц">‹</button><b>${monthTitle(y, m)}</b><button class="arw" data-a="cmNext" aria-label="Следующий месяц">›</button></div>
+      <div class="wk">${WEEK_HEAD}</div><div class="days">${grid}</div>
+      <div class="legend"><span><i></i>игра</span><span><i class="tr"></i>тренировка</span>${player ? '<span><i class="ring"></i>ты был(а)</span>' : ''}</div>
+    </div>
+    ${viewDayInfo(S.calSel)}` };
+}
+
+function viewDayInfo(date) {
+  const head = extra => `<div class="dhead"><div><b>${esc(dateTitle(date))}</b><small>${esc(wdName(date))}</small></div>${extra || ''}</div>`;
+  if (!S.calData.map[date]) return `<div class="panel pad dinfo">${head()}<div class="dmeta">В этот день ничего не было</div></div>`;
+  const info = dayCache[date];
+  if (!info || info === 'loading') { loadDay(date); return `<div class="panel pad dinfo">${head(typeChip(S.calData.map[date].type))}<div class="dmeta">Загружаю…</div></div>`; }
+  if (info.error) return `<div class="panel pad dinfo">${head()}<div class="warn">${esc(info.error)}</div></div>`;
+  const player = S.role === 'player', game = info.type === 'игра';
+  let me = '';
+  if (player) {
+    const mine = info.sets.filter(s => s.mine), w = mine.filter(s => s.mine === 'win').length;
+    if (!info.me) me = '<div class="me no">В этот день без тебя</div>';
+    else if (game && mine.length) me = `<div class="me ok"><b>Твои сеты: ${mine.length}</b><span>${w} ${plural(w, 'победа', 'победы', 'побед')} · ${mine.length - w} ${plural(mine.length - w, 'поражение', 'поражения', 'поражений')}</span></div>`;
+    else me = `<div class="me ok"><b>${game ? 'Ты был(а) на игре' : 'Ты был(а) на тренировке'} ✅</b></div>`;
+    if (info.myPay) {
+      const lbl = (PAY_LABEL[info.myPay.status] || ['', info.myPay.status]);
+      me += `<div class="me pay"><span>Оплата: <b>${info.myPay.amount} ¥</b></span><span class="chip ${lbl[0]}">${lbl[1] === 'ждём чек' ? 'ждём чек в боте' : lbl[1]}</span></div>`;
+    }
+  }
+  const sets = info.sets.map(s => `<div class="srow ${s.mine}"><span class="no">${s.num}</span>
+      <span class="res"><i class="t${s.t1} ${s.winner === s.t1 ? 'w' : ''}" style="--tc: var(--${s.t1})">${s.t1}</i> ${s.sc1}:${s.sc2} <i class="t${s.t2} ${s.winner === s.t2 ? 'w' : ''}" style="--tc: var(--${s.t2})">${s.t2}</i></span>
+      ${s.mine ? `<span class="chip ${s.mine === 'win' ? 'ok' : 'bad'}">${s.mine === 'win' ? 'победа' : 'поражение'}${s.side ? ', ты в ' + s.side : ''}</span>` : ''}</div>`).join('');
+  const admin = !player ? `
+    ${info.pay ? `<div class="me ${info.pay.paid === info.pay.total ? 'ok' : ''}"><b>Оплатили ${info.pay.paid} из ${info.pay.total}</b></div>` : ''}
+    ${info.people && info.people.length ? `<div class="people">${info.people.map(n => `<span>${esc(n)}</span>`).join('')}</div>` : ''}
+    <button class="btn inline" data-a="openDay" data-d="${date}">Открыть день</button>` : '';
+  return `<div class="panel pad dinfo">${head(typeChip(info.type))}
+    <div class="dmeta">${info.n} ${plural(info.n, 'человек', 'человека', 'человек')}${game ? ` · ${info.sets.length} ${plural(info.sets.length, 'сет', 'сета', 'сетов')}` : ''}</div>
+    ${me}${sets ? `<div class="sets ${player ? 'pl' : ''}">${sets}</div>` : ''}${admin}</div>`;
+}
+
 /* ---------- счёт за тренировку ---------- */
 // Сумма с человека: аренда / участников + доплата за инвентарь, вверх до целого юаня (как на сервере).
 function billCalc(rent, n, extra) {
@@ -958,26 +1119,35 @@ function readQr(file) {
 }
 
 /* ---------- календарь ---------- */
-function renderCal() {
-  const o = $('#overlay');
-  if (!S.cal) { setHTML(o, ''); return; }
-  const { y, m } = S.cal;
+/** Сетка месяца. info(iso) → { type, mine } для точки и обводки «ты был». */
+function monthGrid(y, m, action, sel, info) {
   const first = new Date(y, m, 1), start = (first.getDay() + 6) % 7;
-  const daysIn = new Date(y, m + 1, 0).getDate();
-  const total = Math.ceil((start + daysIn) / 7) * 7;
-  const title = first.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }).replace(' г.', '');
+  const total = Math.ceil((start + new Date(y, m + 1, 0).getDate()) / 7) * 7;
   const cells = [];
   for (let i = 0; i < total; i++) {
     const d = new Date(y, m, 1 - start + i);
     const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const t = S.days[iso];
-    cells.push(`<button class="day ${d.getMonth() !== m ? 'out' : ''} ${iso === S.today ? 'today' : ''} ${iso === S.date ? 'sel' : ''}" data-a="pick" data-d="${iso}">
-      <span>${d.getDate()}</span>${t ? `<i class="${t === 'тренировка' ? 'tr' : ''}"></i>` : ''}</button>`);
+    const t = info(iso);
+    cells.push(`<button class="day ${d.getMonth() !== m ? 'out' : ''} ${iso === S.today ? 'today' : ''} ${iso === sel ? 'sel' : ''} ${t && t.mine ? 'mine' : ''}" data-a="${action}" data-d="${iso}">
+      <span>${d.getDate()}</span>${t ? `<i class="${t.type === 'тренировка' ? 'tr' : ''}"></i>` : ''}</button>`);
   }
+  return cells.join('');
+}
+const monthTitle = (y, m) => new Date(y, m, 1).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }).replace(' г.', '');
+const WEEK_HEAD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map(d => `<span class="${d === 'Сб' ? 'sat' : ''}">${d}</span>`).join('');
+
+function renderCal() {
+  const o = $('#overlay');
+  if (!S.cal) { setHTML(o, ''); return; }
+  const { y, m } = S.cal;
+  const title = monthTitle(y, m);
+  const pickType = S.cal.pickType;
+  const cells = [monthGrid(y, m, 'pick', pickType ? '' : S.date, iso => S.days[iso] ? { type: S.days[iso] } : null)];
   setHTML(o, `<div class="scrim" data-a="calClose"></div>
     <div class="sheet" role="dialog" aria-label="Выбор даты"><div class="grab"></div>
       <div class="calh"><button class="arw" data-a="calPrev" aria-label="Предыдущий месяц">‹</button><b>${title}</b><button class="arw" data-a="calNext" aria-label="Следующий месяц">›</button></div>
-      <div class="wk">${['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map(d => `<span class="${d === 'Сб' ? 'sat' : ''}">${d}</span>`).join('')}</div>
+      ${pickType ? `<div class="picktitle">${pickType === 'игра' ? 'Игра' : 'Тренировка'}: выбери день</div>` : ''}
+      <div class="wk">${WEEK_HEAD}</div>
       <div class="days">${cells.join('')}</div>
       <div class="legend"><span><i></i>игра</span><span><i class="tr"></i>тренировка</span></div>
       <button class="btn go" data-a="pick" data-d="${S.today}">Сегодня</button></div>`);
@@ -998,6 +1168,7 @@ document.addEventListener('click', e => {
     S.tab = b.dataset.tab; S.armed = null; S.edit = null; S.bill = null;
     if (S.tab === 'board' || S.tab === 'me') S.stats = null;
     if (S.tab === 'self') { S.self.stats = null; S.self.edit = false; }
+    if (S.tab === 'cal' || S.tab === 'home') { S.calData = null; Object.keys(dayCache).forEach(k => delete dayCache[k]); }   // свежие данные
     render(); window.scrollTo(0, 0); return;
   }
   if (b.dataset.type) {
@@ -1013,7 +1184,13 @@ document.addEventListener('click', e => {
     case 'calClose': S.cal = null; renderCal(); break;
     case 'calPrev': S.cal.m--; if (S.cal.m < 0) { S.cal.m = 11; S.cal.y--; } renderCal(); break;
     case 'calNext': S.cal.m++; if (S.cal.m > 11) { S.cal.m = 0; S.cal.y++; } renderCal(); break;
-    case 'pick': S.cal = null; renderCal(); if (b.dataset.d !== S.date) { S.bill = null; load(b.dataset.d); } break;
+    case 'pick': { const t = S.cal && S.cal.pickType; S.cal = null; renderCal(); if (t || b.dataset.d !== S.date) openDay(b.dataset.d, t); break; }
+    case 'start': { const d = new Date(S.today + 'T12:00:00'); S.cal = { y: d.getFullYear(), m: d.getMonth(), pickType: b.dataset.t }; renderCal(); break; }
+    case 'openDay': openDay(b.dataset.d, null); break;
+    case 'home': saveNow(); S.tab = 'home'; S.bill = null; S.edit = null; S.calData = null; render(); window.scrollTo(0, 0); break;
+    case 'calSel': S.calSel = b.dataset.d; render(); break;
+    case 'cmPrev': S.calM.m--; if (S.calM.m < 0) { S.calM.m = 11; S.calM.y--; } render(); break;
+    case 'cmNext': S.calM.m++; if (S.calM.m > 11) { S.calM.m = 0; S.calM.y++; } render(); break;
     case 'toggle':
       if (S.present.has(id)) { S.present.delete(id); delete S.team[id]; } else S.present.add(id);
       scheduleSave(); render(); break;
