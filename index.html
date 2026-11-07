@@ -89,6 +89,34 @@
   .tcard .ctl { display: flex; align-items: center; justify-content: space-between; }
   .tcard .tot { font: 600 15px/1 var(--display); }
   .tcard .tot.over { color: var(--red); }
+  .tcard .tl { font-size: 13px; color: var(--muted); margin: 6px 0 4px; }
+  .tcard .tl em { font-style: normal; font-weight: 700; color: var(--black); }
+  .tcard .gn { font: 700 17px/1 var(--display); font-style: normal; }
+  .tcard .tsum { margin-top: 8px; font-size: 12px; font-weight: 700; line-height: 1.25; color: var(--green-ink); }
+  .tcard .tsum.bad { color: var(--red); }
+  #tabbar[hidden] { display: none; }
+  .fixbar { background: #FFF4DC; color: #7A4B00; border-radius: 14px; padding: 10px 12px; font-size: 14px; margin-bottom: 12px; }
+  .btn.finish { background: var(--white); color: var(--black); box-shadow: inset 0 0 0 2px var(--black); margin-top: 26px; }
+  .btn.finish.armed { background: var(--red); color: var(--white); box-shadow: none; }
+  #action .btn.finish { margin-top: 0; }
+  .sumrow { display: flex; align-items: center; gap: 8px; padding: 11px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .sumrow:last-child { border-bottom: 0; }
+  .sumrow .nm { flex: 1; font-weight: 600; }
+  .sumrow .sv { color: var(--muted); min-width: 58px; text-align: right; }
+  .sumrow .xp { font: 700 15px/1 var(--display); color: var(--green-ink); min-width: 60px; text-align: right; }
+  .choice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+  .choice .btn { margin: 0; }
+  .board2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .scb { background: var(--white); border-radius: 16px; padding: 10px; border-top: 5px solid var(--tc); text-align: center; }
+  .scb .tn { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .scb input { width: 86px; font: 800 30px/1 var(--display); text-align: center; border: 0; background: var(--field); border-radius: 12px; padding: 8px 0; }
+  .gline { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 14px; }
+  .gline .gl { flex: 1; } .gline b { min-width: 18px; text-align: center; }
+  .tb.off.on { background: var(--muted); color: var(--white); }
+  .helpbox { font-size: 14px; line-height: 1.45; }
+  .lnk.help { display: inline-block; border: 0; background: none; padding: 0 0 10px; font-size: 14px; }
+  button.st { border: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+  .tilehint { font-size: 12px; color: var(--muted); text-align: center; margin: -6px 0 12px; }
   .mini { width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--field); font-size: 18px; line-height: 1; }
   .trow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
   .trow:last-child { border-bottom: 0; }
@@ -202,11 +230,11 @@
   .drow .cnt { font-size: 13px; color: var(--muted); text-align: right; min-width: 56px; }
   .chip.game { background: var(--green-soft); color: var(--green-ink); }
   .chip.train { background: var(--black); color: var(--white); }
-  .day.mine span { box-shadow: inset 0 0 0 2px var(--green); }
-  .day.mine.sel span { box-shadow: none; }
   .legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 5px; vertical-align: 1px; }
   .legend i.tr { background: var(--black); }
-  .legend i.ring { width: 10px; height: 10px; background: none; box-shadow: inset 0 0 0 2px var(--green); vertical-align: -1px; }
+  .legend i { width: 11px; height: 11px; vertical-align: -1px; }
+  .legend i.ring { background: none; box-shadow: inset 0 0 0 2px var(--green); }
+  .legend i.today { background: none; box-shadow: inset 0 0 0 2px var(--red); }
   .calp .legend { margin-bottom: 0; }
   .dhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
   .dhead b { display: block; font: 800 20px/1.15 var(--display); }
@@ -272,8 +300,14 @@
   .day { position: relative; height: 46px; border: 0; background: none; font: 500 17px/1 var(--text); display: grid; place-items: center; }
   .day span { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; }
   .day.out { color: #B8C1BA; }
-  .day.today span { color: var(--red); font-weight: 700; }
-  .day.sel span { background: var(--black); color: var(--white); font-weight: 700; }
+  .day.k-g span { background: var(--green); color: var(--white); font-weight: 700; }
+  .day.k-tr span { background: var(--black); color: var(--white); font-weight: 700; }
+  .day.hollow.k-g span { background: none; color: var(--green-ink); box-shadow: inset 0 0 0 2px var(--green); }
+  .day.hollow.k-tr span { background: none; color: var(--black); box-shadow: inset 0 0 0 2px var(--black); }
+  .day.today span { outline: 2.5px solid var(--red); outline-offset: 1.5px; }
+  .day.today:not(.k-g):not(.k-tr) span { color: var(--red); font-weight: 700; }
+  .day.sel span { transform: scale(1.1); font-weight: 800; }
+  .day.sel::after { content: ''; position: absolute; bottom: 0; left: 50%; width: 16px; height: 3px; margin-left: -8px; border-radius: 2px; background: var(--black); }
   .day i { position: absolute; bottom: 2px; left: 50%; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--green); }
   .day i.tr { background: var(--black); }
   .legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin: 10px 0 14px; }
@@ -321,7 +355,8 @@ const S = {
   armed: null, err: null, loaded: false, offline: false, edit: null,
   cal: null, stats: null, board: 'xp', scope: 'top', me: null,
   self: { loaded: false, err: '', edit: false, stats: null },   // вкладка «Я» у админа
-  bill: null                                                     // экран «Счёт за тренировку»
+  bill: null,                                                    // экран «Счёт за тренировку»
+  done: false, fix: null, sum: null, setEdit: null, fromSet: false, help: false, calWant: false   // завершённая игра и корректировки
 };
 
 /* ---------- хранилище и связь с сервером ---------- */
@@ -370,6 +405,8 @@ async function flush() {
         if (s) s.pending = false;
       }
       else if (it.kind === 'del') await api('api_deleteSet', it.id);
+      else if (it.kind === 'supd') await api('api_updateSet', it.payload);
+      else if (it.kind === 'fin') { const r = await api('api_finishDay', it.date); if (it.date === S.date) S.sum = r; }
       outbox.shift(); store.set('vb_outbox', outbox);
       S.offline = false; S.stats = null;
     } catch (e) {
@@ -390,7 +427,7 @@ async function flush() {
     }
   }
   flushing = false; renderStatus();
-  if (S.tab === 'log') render();
+  if (S.tab === 'log' || S.tab === 'sum') render();
 }
 
 function dayPayload() {
@@ -439,6 +476,10 @@ async function load(date) {
     S.maxNum = S.sets.reduce((m, s) => Math.max(m, s.num), 0);
     S.pair = nextPair() || (day && day.pair) || null;
     S.pick = { w: null, l: null, low: false };
+    // Завершённая игра открывается итогами. Прошлые игровые дни с сетами завершены сами.
+    S.done = (d.day && d.day.done) || (S.type === 'игра' && S.date < S.today && S.sets.length > 0) ||
+      outbox.some(o => o.kind === 'fin' && o.date === S.date);
+    S.fix = null; S.sum = null; S.setEdit = null; S.fromSet = false;
     if (S.openType) {   // пришли с главной: «Записать игру» или «Записать тренировку»
       const empty = !(day && day.present && day.present.length) && !S.sets.length;
       if (empty) S.type = S.openType;
@@ -447,6 +488,7 @@ async function load(date) {
     }
     S.loaded = true;
     if (S.type === 'тренировка' && (S.tab === 'teams' || S.tab === 'set')) S.tab = 'att';
+    if (S.done) S.tab = S.tab === 'log' ? 'log' : 'sum';
   } catch (e) {
     S.err = 'Не загрузилось: ' + msg(e);
   }
@@ -568,21 +610,23 @@ const ICONS = {
 };
 ICONS.self = ICONS.card;
 ICONS.home = '<path d="M3 11l9-7 9 7M5 9.5V20h5v-6h4v6h5V9.5"/>';
+ICONS.sum = '<path d="M5 20V12M10 20V7M15 20v-5M20 20V4"/>';
 ICONS.cal = '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>';
-const TAB_NAMES = { att: 'Пришли', teams: 'Команды', set: 'Сет', log: 'Журнал', board: 'Рейтинг', card: 'Карточка', me: 'Мои итоги', self: 'Я', home: 'Главная', cal: 'Календарь' };
+const TAB_NAMES = { att: 'Пришли', teams: 'Команды', set: 'Сет', log: 'Журнал', board: 'Рейтинг', card: 'Карточка', me: 'Мои итоги', self: 'Я', home: 'Главная', cal: 'Календарь', sum: 'Итоги' };
 const DAY_TABS = ['att', 'teams', 'set', 'log'];
 const editIcon = '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></svg>';
 
 function render() {
   const admin = S.role !== 'player';
-  const inDay = admin && DAY_TABS.includes(S.tab);   // внутри записи дня: отметки, команды, сеты, журнал
-  $('#typeSeg').hidden = !inDay;
+  const inDay = admin && (DAY_TABS.includes(S.tab) || S.tab === 'sum');   // внутри записи дня: отметки, команды, сеты, журнал
+  $('#typeSeg').hidden = !inDay || S.done;   // у завершённой игры тип уже не меняют
+  $('#tabbar').hidden = inDay && !!S.fix;
   $('#backbtn').hidden = !inDay;
   $('#datebtn').disabled = true;
   document.querySelectorAll('#typeSeg button').forEach(b => b.classList.toggle('on', b.dataset.type === S.type));
   $('#dTitle').textContent = inDay ? (dateTitle(S.date) || 'Загрузка') : 'Волейбол Гуанчжоу';
   $('#dWeek').textContent = inDay ? weekday(S.date) : '';
-  const tabs = !admin ? ['card', 'me', 'cal', 'board'] : inDay ? DAY_TABS : ['home', 'cal', 'board', 'self'];
+  const tabs = !admin ? ['card', 'me', 'cal', 'board'] : inDay ? (S.done ? ['sum', 'log'] : DAY_TABS) : ['home', 'cal', 'board', 'self'];
   setHTML($('#tabbar'), tabs.map(t => {
     const hide = admin && S.type === 'тренировка' && (t === 'teams' || t === 'set');
     return `<button data-tab="${t}" class="${S.tab === t ? 'on' : ''}" ${hide ? 'hidden' : ''}><svg viewBox="0 0 24 24">${ICONS[t]}</svg>${TAB_NAMES[t]}</button>`;
@@ -600,9 +644,16 @@ function render() {
   } else if (S.bill) {
     const v = viewBill();
     setHTML(app, v.html); act = v.action || '';
+  } else if (S.setEdit) {
+    const v = viewSetEdit();
+    setHTML(app, v.html); act = v.action;
   } else {
     const v = ({ att: viewAtt, teams: viewTeams, set: viewSet, log: viewLog, board: viewBoard, card: viewMyCard, me: viewMe, self: viewSelf,
-      home: viewHome, cal: viewCalendar })[S.tab]();
+      home: viewHome, cal: viewCalendar, sum: viewSum })[S.tab]();
+    if (inDay && S.fix) {   // корректировки завершённой игры
+      v.html = `<div class="fixbar">✏️ Корректировки. Игра уже завершена, после «Готово» итоги и рейтинг пересчитаются.</div>` + v.html;
+      v.action = `<button class="btn go" data-a="fixDone">Готово</button>`;
+    }
     setHTML(app, v.html); act = v.action || '';
   }
   const ab = $('#action');
@@ -652,20 +703,34 @@ function attList() {
   }).join('');
 }
 
+// Сколько в команде всего и чего не хватает до полного состава.
+function teamFill(t) {
+  const r = roster(t).length, g = guestsOf(t), tot = r + g;
+  return { r, g, tot, need: S.teamSize - tot };
+}
+const fillText = f => f.need > 0 ? `${f.tot} из ${S.teamSize}, не хватает ${f.need}` : f.need < 0 ? `${f.tot} из ${S.teamSize}, лишних ${-f.need}` : `${f.tot} из ${S.teamSize} ✓`;
+const shortTeams = list => list.filter(t => teamFill(t).need !== 0);
+
 function viewTeams() {
   const pres = S.players.filter(p => S.present.has(p.id)).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   if (!pres.length) return { html: '<h2>Команды</h2><div class="empty">Сначала отметь пришедших на вкладке «Пришли».</div>' };
   const none = pres.filter(p => !S.team[p.id]).length;
   const cards = TEAMS.map(t => {
-    const r = roster(t).length, g = guestsOf(t), size = sizeOf(t);
-    return `<div class="tcard t${t}"><b>${t}</b><div class="cmp">${r} наш. + ${g} кит.</div>
-      <div class="ctl"><button class="mini" data-a="size-" data-t="${t}" aria-label="Меньше людей в ${t}">−</button>
-      <span class="tot ${r > size ? 'over' : ''}">${r + g}/${size}</span>
-      <button class="mini" data-a="size+" data-t="${t}" aria-label="Больше людей в ${t}">+</button></div></div>`;
+    const f = teamFill(t);
+    return `<div class="tcard t${t}"><b>${t}</b>
+      <div class="tl">Наших: <em>${f.r}</em></div>
+      <div class="tl">Китайцев:</div>
+      <div class="ctl"><button class="mini" data-a="size-" data-t="${t}" aria-label="Меньше китайцев в ${t}">−</button>
+      <em class="gn">${f.g}</em>
+      <button class="mini" data-a="size+" data-t="${t}" aria-label="Больше китайцев в ${t}">+</button></div>
+      <div class="tsum ${f.need ? 'bad' : ''}">Всего: ${fillText(f)}</div></div>`;
   }).join('');
-  return { action: `<button class="btn go" data-a="toSet">Дальше: сет</button>`, html: `
-    <h2>Команды</h2>
-    <p class="lead">Нажми букву у игрока. Если в команде 5 человек, убавь «−».</p>
+  const title = S.fromSet ? `Составы на сет №${nextNum()}` : 'Команды';
+  const lead = S.fromSet ? 'Прошлые сеты не меняются: у каждого записанного сета свои составы.'
+    : 'Нажми букву у игрока. Китайцы добираются до 6 сами, если их меньше, убавь «−».';
+  return { action: `<button class="btn go" data-a="toSet">${S.fromSet ? 'Готово, к сету' : 'Дальше: сет'}</button>`, html: `
+    <h2>${title}</h2>
+    <p class="lead">${lead}</p>
     <div class="teams3">${cards}</div>
     <div class="panel">${none ? `<div class="warn">Без команды: ${none}</div>` : ''}
     ${pres.map(p => `<div class="trow"><span class="nm">${esc(p.name)}</span><span class="tpick">${
@@ -697,23 +762,115 @@ function viewSet() {
     action: `<button class="btn go" data-a="record" ${w && l !== null ? '' : 'disabled'}>Записать сет ${nextNum()}</button>`,
     html: `
     <div class="board">${half(a)}${half(b)}</div>
+    ${shortTeams([a, b]).map(t => `<div class="warn">Команда ${t}: ${fillText(teamFill(t))}. Если так и есть, записывай.</div>`).join('')}
+    <button class="more" data-a="toTeamsSet">Изменить составы</button>
     <p class="hint">${w ? 'Теперь очки проигравшей команды' : 'Нажми на команду, которая выиграла'}</p>
     <div class="grid">${Array.from({ length: 15 }, (_, i) => num(i + 10)).join('')}</div>
     ${S.pick.low ? `<div class="grid" style="margin-top:7px">${Array.from({ length: 10 }, (_, i) => num(i)).join('')}</div>` : `<button class="more" data-a="low">Меньше 10</button>`}
     ${l !== null && l >= 24 ? `<div class="deuce">Игра на баланс, у проигравших <button class="mini" data-a="l-">−</button><b>${l}</b><button class="mini" data-a="l+">+</button></div>` : ''}
-    <p class="sub-h">Играет другая пара?</p>${pairButtons()}` };
+    <p class="sub-h">Играет другая пара?</p>${pairButtons()}
+    ${S.sets.length ? finishButton() : ''}` };
+}
+
+function finishButton() {
+  const armed = S.armed === 'finish';
+  return `<button class="btn finish ${armed ? 'armed' : ''}" data-a="finish">${armed ? 'Точно завершить? Нажми ещё раз' : `Завершить игру (${S.sets.length} ${plural(S.sets.length, 'сет', 'сета', 'сетов')})`}</button>`;
 }
 
 function viewLog() {
   const ss = liveSets().reverse();
   if (!ss.length) return { html: '<h2>Журнал</h2><div class="empty">За этот день сетов пока нет.</div>' };
   const names = (ids, g) => (ids.map(id => esc(pname(id))).join(', ') || 'наших нет') + (g ? ` + ${g} кит.` : '');
-  return { html: `<h2>Журнал</h2><p class="lead">${ss.length} ${plural(ss.length, 'сет', 'сета', 'сетов')} за день. Ошибочный сет можно удалить, рейтинг пересчитается.</p>
+  const fixing = S.fix === 'sets', ro = S.done && !fixing;
+  const lead = fixing ? 'Нажми «Изменить» у сета, чтобы поправить счёт, составы или китайцев.'
+    : ro ? 'Игра завершена. Чтобы поправить сет, нажми «Внести корректировки».'
+    : 'Ошибочный сет можно удалить, рейтинг пересчитается.';
+  const btn = s => fixing ? `<button class="del" data-a="editSet" data-id="${esc(s.id)}">Изменить</button>`
+    : ro ? '' : `<button class="del ${S.armed === s.id ? 'armed' : ''}" data-a="del" data-id="${esc(s.id)}">${S.armed === s.id ? 'Точно удалить?' : 'Удалить'}</button>`;
+  return { action: ro ? `<button class="btn" data-a="fix">Внести корректировки</button>` : !S.done ? finishButton() : '',
+    html: `<h2>Журнал</h2><p class="lead">${ss.length} ${plural(ss.length, 'сет', 'сета', 'сетов')} за день. ${lead}</p>
+    ${ro && S.armed === 'fix' ? fixChoice() : ''}
     <div class="panel">${ss.map(s => `
     <div class="lrow"><div class="lt"><span class="no">№${s.num}</span>
       <span class="res"><i class="t${s.t1} ${s.winner === s.t1 ? 'w' : ''}">${s.t1}</i> ${s.sc1}:${s.sc2} <i class="t${s.t2} ${s.winner === s.t2 ? 'w' : ''}">${s.t2}</i>${s.pending ? ' <small>не отправлен</small>' : ''}</span>
-      <button class="del ${S.armed === s.id ? 'armed' : ''}" data-a="del" data-id="${esc(s.id)}">${S.armed === s.id ? 'Точно удалить?' : 'Удалить'}</button></div>
+      ${btn(s)}</div>
       <div class="ls">${s.t1}: ${names(s.r1, s.g1)}</div><div class="ls">${s.t2}: ${names(s.r2, s.g2)}</div></div>`).join('')}</div>` };
+}
+
+/* ---------- итоги завершённой игры и корректировки ---------- */
+let sumBusy = false;
+async function loadSum() {
+  if (sumBusy || outbox.length) return;   // сначала отправим всё из очереди, потом посчитаем
+  sumBusy = true;
+  const date = S.date;
+  try { const r = await api('api_daySummary', date); if (date === S.date) S.sum = r; }
+  catch (e) { if (date === S.date) S.sum = { error: msg(e).replace(/^.*ОШИБКА:\s*/, '') }; }
+  sumBusy = false;
+  if (S.tab === 'sum') render();
+}
+
+function fixChoice() {
+  return `<div class="panel pad"><b>Что поправить?</b>
+    <div class="choice"><button class="btn" data-a="fixAtt">Кто пришёл</button><button class="btn" data-a="fixSets">Сеты</button></div>
+    <button class="more" data-a="fixCancel">Отмена</button></div>`;
+}
+
+function viewSum() {
+  const s = S.sum;
+  if (!s) {
+    loadSum();
+    const wait = !outbox.length ? 'Считаю итоги…' : S.offline ? 'Нет связи. Итоги посчитаются, когда она появится' : 'Сохраняю и считаю итоги…';
+    return { html: `<h2>Итоги игры</h2><div class="empty">${wait}</div>` };
+  }
+  if (s.error) return { html: `<h2>Итоги игры</h2><div class="panel pad"><div class="warn">${esc(s.error)}</div><button class="btn inline" data-a="sumRetry">Повторить</button></div>` };
+  const rows = s.players.map(p => `<div class="sumrow"><span class="nm">${esc(p.name)}</span>
+    <span class="sv">${p.sets} ${plural(p.sets, 'сет', 'сета', 'сетов')}</span>
+    <span class="sv">${p.wins} ${plural(p.wins, 'победа', 'победы', 'побед')}</span>
+    <span class="xp">+${p.xp} XP</span></div>`).join('');
+  return { action: `<button class="btn" data-a="fix">Внести корректировки</button>`, html: `
+    <h2>Итоги игры</h2>
+    <p class="lead">${s.sets} ${plural(s.sets, 'сет', 'сета', 'сетов')} · ${s.players.length} ${plural(s.players.length, 'человек', 'человека', 'человек')}. Игра завершена, игроки уже видят итоги и рейтинг.</p>
+    ${S.armed === 'fix' ? fixChoice() : ''}
+    <div class="panel">${rows || '<div class="empty">Наших в этот день не было</div>'}</div>` };
+}
+
+// Редактор сета из журнала: счёт, кто в какой команде, сколько китайцев.
+function viewSetEdit() {
+  const e = S.setEdit, a = e.t1, b = e.t2;
+  const ids = [...new Set([...S.present, ...e.r1, ...e.r2])].sort((x, y) => pname(x).localeCompare(pname(y), 'ru'));
+  const side = id => e.r1.includes(id) ? a : e.r2.includes(id) ? b : '';
+  const sc = (k, t) => `<label class="scb t${t}"><span class="tn">Команда ${t}</span>
+    <input id="e_${k}" type="number" inputmode="numeric" min="0" max="60" value="${e[k]}"></label>`;
+  const gl = (k, t, r) => `<div class="gline"><span class="gl">Китайцев в ${t}</span>
+    <button class="mini" data-a="eg-" data-k="${k}">−</button><b>${e[k]}</b><button class="mini" data-a="eg+" data-k="${k}">+</button>
+    <span class="sv">всего ${r.length + e[k]} из ${S.teamSize}</span></div>`;
+  return {
+    action: `<button class="btn" data-a="eCancel">Отмена</button><button class="btn go" data-a="eSave">Сохранить сет</button>`,
+    html: `<h2>Сет №${e.num}</h2>
+    <p class="lead">Поправь счёт, составы или китайцев. Победитель определяется по счёту.</p>
+    <div class="board2">${sc('sc1', a)}${sc('sc2', b)}</div>
+    <p class="hint" id="ewin">${winText(e)}</p>
+    <div class="panel pad">${gl('g1', a, e.r1)}${gl('g2', b, e.r2)}</div>
+    <p class="sub-h">Кто в какой команде</p>
+    <div class="panel">${ids.map(id => `<div class="trow"><span class="nm">${esc(pname(id))}</span><span class="tpick">${
+      [a, b].map(t => `<button class="tb t${t} ${side(id) === t ? 'on' : ''}" data-a="emove" data-id="${esc(id)}" data-t="${t}">${t}</button>`).join('')
+    }<button class="tb off ${side(id) ? '' : 'on'}" data-a="emove" data-id="${esc(id)}" data-t="" aria-label="Не играл в этом сете">—</button></span></div>`).join('')}</div>
+    <button class="del ${S.armed === 'edel' ? 'armed' : ''}" data-a="edel">${S.armed === 'edel' ? 'Точно удалить сет?' : 'Удалить сет'}</button>` };
+}
+const winText = e => e.sc1 === e.sc2 ? 'Счёт равный, так не бывает' : `Победила команда ${e.sc1 > e.sc2 ? e.t1 : e.t2}`;
+
+function saveSetEdit() {
+  const e = S.setEdit;
+  e.sc1 = Number($('#e_sc1').value); e.sc2 = Number($('#e_sc2').value);
+  if (!(e.sc1 >= 0 && e.sc2 >= 0) || e.sc1 === e.sc2) { toast('Проверь счёт: он не может быть равным'); return; }
+  const p = { id: e.id, date: e.date, num: e.num, t1: e.t1, t2: e.t2, r1: e.r1, g1: e.g1, r2: e.r2, g2: e.g2,
+    winner: e.sc1 > e.sc2 ? e.t1 : e.t2, sc1: e.sc1, sc2: e.sc2 };
+  const i = S.sets.findIndex(x => x.id === e.id);
+  if (i >= 0) S.sets[i] = Object.assign({}, S.sets[i], p);
+  enqueue({ kind: 'supd', payload: p });
+  S.setEdit = null; S.sum = null; S.armed = null;
+  toast(`Сет №${p.num} исправлен`);
+  render(); window.scrollTo(0, 0);
 }
 
 function viewBoard() {
@@ -744,6 +901,11 @@ function viewBoard() {
   if (S.board === 'rating' && S.scope === 'all') {
     rows = rows.concat(st.rating.filter(r => r.calib).map(r => ({ id: r.id, name: r.name, v: `${r.sets}/10`, u: 'калибровка', cal: true })));
   }
+  let empty = 'Пока пусто. Появится после первой завершённой игры.';
+  if (S.board === 'rating' && !rows.length && st.rating.length) {   // все ещё в калибровке: показываем, кто ближе всех
+    const near = st.rating.slice().sort((a, b) => b.sets - a.sets).slice(0, 3).map(r => `${esc(r.name)} ${r.sets}/10`).join(', ');
+    empty = `Все пока в калибровке, нужно сыграть 10 сетов.<br>Ближе всех: ${near}.`;
+  }
   const shown = S.scope === 'top' ? rows.slice(0, 10) : rows;
   let place = 0;
   const list = shown.map(r => {
@@ -751,11 +913,21 @@ function viewBoard() {
     return `<div class="lb top${r.cal ? 0 : place} ${r.cal ? 'cal' : ''} ${r.id === myId ? 'me' : ''}"><span class="pl">${r.cal ? '–' : place}</span>
     <span class="nm">${esc(r.name)}</span><span class="v">${r.v}<small>${esc(r.u)}</small></span></div>`;
   }).join('');
-  return { html: `<h2>Рейтинг</h2><p class="lead">${note}</p>
+  return { html: `<h2>Рейтинг</h2>
     <div class="tabs2">${tabs.map(([k, t]) => `<button data-a="boardTab" data-k="${k}" class="${S.board === k ? 'on' : ''}">${t}</button>`).join('')}</div>
+    <p class="lead">${note}</p>
+    <button class="lnk help" data-a="help">${S.help ? 'Скрыть объяснение' : 'Как считается?'}</button>
+    ${S.help ? `<div class="panel pad helpbox">${HELP[S.board]}</div>` : ''}
     <div class="scope"><button data-a="scope" data-k="top" class="${S.scope === 'top' ? 'on' : ''}">Топ-10</button><button data-a="scope" data-k="all" class="${S.scope === 'all' ? 'on' : ''}">Все игроки (${rows.length})</button></div>
-    <div class="panel">${list || '<div class="empty">Пока пусто. Появится после первой игры.</div>'}</div>` };
+    <div class="panel">${list || `<div class="empty">${empty}</div>`}</div>` };
 }
+
+const HELP = {
+  xp: 'За каждый приход на игру <b>+10 XP</b>, за каждую победу в сете <b>+1 XP</b>.<br>Со 2-й субботы подряд добавляется бонус серии: +2, потом +3 и так до +5.<br>Игра попадает в зачёт после «Завершить игру». Каждый квартал опыт начинается заново, а уровень копится всё время.',
+  rating: 'Все начинают с <b>1000</b>. После каждого сета победители получают очки, проигравшие теряют столько же.<br>Сколько, зависит от силы составов: обыграть сильных выгоднее, чем слабых, а крупная победа даёт чуть больше. Китайцы считаются за 1000 и сами не меняются.<br>Первые <b>10 сетов</b> это калибровка: очки меняются быстрее, а в таблицу игрок попадает после 10-го сета.',
+  streak: 'Серия это сколько суббот подряд ты приходишь на игру.<br>Одна пропущенная суббота из четырёх серию не рвёт.<br>Со 2-й субботы подряд серия даёт бонус к опыту, до +5 XP.',
+  train: 'Каждая тренировка добавляет 1 в этот зачёт.<br>Он идёт отдельно и в субботний опыт не входит.'
+};
 
 function viewMe() {
   if (!S.stats) { loadStats(); return { html: '<h2>Мои итоги</h2><div class="empty">Считаю…</div>' }; }
@@ -790,21 +962,24 @@ function statsView(m, head) {
   const L = level(m.xpAll);
   const pct = L.next ? Math.round(100 * (m.xpAll - L.from) / (L.next - L.from)) : 100;
   const tr = m.trQ || 0;
+  const tile = (cls, b, span) => `<button class="st ${cls}" data-a="toCal"><b>${b}</b><span>${span}</span></button>`;
+  const sq = m.setsQ || 0;
   const rating = m.calib
-    ? `<div class="st w2"><b>${m.sets} из 10</b><span>сетов до рейтинга силы, идёт калибровка</span></div>`
-    : `<div class="st w2"><b>${m.r}</b><span>рейтинг силы, за сезон ${m.dQ >= 0 ? '+' : ''}${m.dQ}</span></div>`;
-  const train = `<div class="st"><b>${tr}</b><span>${plural(tr, 'тренировка', 'тренировки', 'тренировок')} за сезон</span></div>`;
+    ? tile('w2', `${m.sets} из 10`, `сетов сыграно. После 10-го появится твой рейтинг силы`)
+    : tile('w2', m.r, `рейтинг силы, за сезон ${m.dQ >= 0 ? '+' : ''}${m.dQ}`);
+  const train = tile('', tr, `${plural(tr, 'тренировка', 'тренировки', 'тренировок')} за сезон`);
   return { html: `${head || ''}
     <div class="hero"><div class="lvl">Уровень «${L.name}»</div>
       <div class="xp">${m.xpQ}<small>XP за сезон</small></div>
       <div class="bar"><i style="width:${pct}%"></i></div>
       <div class="next">${L.next ? `До уровня «${L.nextName}» ещё ${L.next - m.xpAll} XP` : 'Это максимальный уровень'}</div></div>
     <div class="stats3">
-      <div class="st"><b>${m.arrQ}</b><span>${plural(m.arrQ, 'приход', 'прихода', 'приходов')} за сезон</span></div>
-      <div class="st"><b>${m.streak}</b><span>серия, лучшая ${m.best}</span></div>
-      <div class="st"><b>${m.winsQ}</b><span>${plural(m.winsQ, 'победа', 'победы', 'побед')} в сетах</span></div>
+      ${tile('', m.arrQ, `${plural(m.arrQ, 'приход', 'прихода', 'приходов')} на игру за сезон`)}
+      ${tile('', m.streak, `${plural(m.streak, 'суббота', 'субботы', 'суббот')} подряд, лучшая серия ${m.best}`)}
+      ${tile('', m.winsQ, `${plural(m.winsQ, 'победа', 'победы', 'побед')} из ${sq} ${plural(sq, 'сета', 'сетов', 'сетов')} за сезон`)}
       ${train}${rating}
     </div>
+    <p class="tilehint">Нажми на плитку, откроется календарь с твоей последней игрой</p>
     ${m.placeXp ? `<div class="panel pad">Ты на ${m.placeXp}-м месте по активности за сезон.</div>` : ''}` };
 }
 
@@ -904,6 +1079,12 @@ async function loadCal() {
     d.days.forEach(x => { map[x.date] = x; });
     S.calData = { days: d.days, map };
     S.today = S.today || d.today;
+    if (S.calWant) {   // пришли с плиток «Мои итоги»: последняя игра, где ты был
+      const past = d.days.filter(x => x.date <= d.today && x.type === 'игра' && !x.open);
+      const pick = (past.filter(x => x.me).pop() || past.pop());
+      if (pick) S.calSel = pick.date;
+      S.calWant = false;
+    }
     if (!S.calSel) { const past = d.days.filter(x => x.date <= d.today); S.calSel = past.length ? past[past.length - 1].date : d.today; }
     if (!S.calM) { const t = new Date(S.calSel + 'T12:00:00'); S.calM = { y: t.getFullYear(), m: t.getMonth() }; }
   } catch (e) { S.calData = { err: msg(e).replace(/^.*ОШИБКА:\s*/, '') }; }
@@ -946,13 +1127,13 @@ function viewCalendar() {
   if (!S.calData) { loadCal(); return { html: '<h2>Календарь</h2><div class="empty">Загружаю…</div>' }; }
   if (S.calData.err) return { html: `<h2>Календарь</h2><div class="panel pad"><div class="warn">${esc(S.calData.err)}</div></div>` };
   const player = S.role === 'player', { y, m } = S.calM;
-  const grid = monthGrid(y, m, 'calSel', S.calSel, iso => { const d = S.calData.map[iso]; return d ? { type: d.type, mine: d.me } : null; });
+  const grid = monthGrid(y, m, 'calSel', S.calSel, iso => { const d = S.calData.map[iso]; return d ? { type: d.type, hollow: player && !d.me } : null; });
   return { html: `
     <h2>Календарь</h2>
     <div class="panel pad calp">
       <div class="calh"><button class="arw" data-a="cmPrev" aria-label="Предыдущий месяц">‹</button><b>${monthTitle(y, m)}</b><button class="arw" data-a="cmNext" aria-label="Следующий месяц">›</button></div>
       <div class="wk">${WEEK_HEAD}</div><div class="days">${grid}</div>
-      <div class="legend"><span><i></i>игра</span><span><i class="tr"></i>тренировка</span>${player ? '<span><i class="ring"></i>ты был(а)</span>' : ''}</div>
+      <div class="legend"><span><i></i>игра</span><span><i class="tr"></i>тренировка</span>${player ? '<span><i class="ring"></i>без тебя</span>' : ''}<span><i class="today"></i>сегодня</span></div>
     </div>
     ${viewDayInfo(S.calSel)}` };
 }
@@ -964,6 +1145,8 @@ function viewDayInfo(date) {
   if (!info || info === 'loading') { loadDay(date); return `<div class="panel pad dinfo">${head(typeChip(S.calData.map[date].type))}<div class="dmeta">Загружаю…</div></div>`; }
   if (info.error) return `<div class="panel pad dinfo">${head()}<div class="warn">${esc(info.error)}</div></div>`;
   const player = S.role === 'player', game = info.type === 'игра';
+  if (player && info.open) return `<div class="panel pad dinfo">${head(typeChip('игра'))}
+    <div class="me ${info.me ? 'ok' : 'no'}"><b>${info.me ? 'Ты на игре ✅' : 'Игра идёт'}</b><span>Сеты, итоги и рейтинг появятся, когда игру завершат</span></div></div>`;
   let me = '';
   if (player) {
     const mine = info.sets.filter(s => s.mine), w = mine.filter(s => s.mine === 'win').length;
@@ -981,7 +1164,7 @@ function viewDayInfo(date) {
   const admin = !player ? `
     ${info.pay ? `<div class="me ${info.pay.paid === info.pay.total ? 'ok' : ''}"><b>Оплатили ${info.pay.paid} из ${info.pay.total}</b></div>` : ''}
     ${info.people && info.people.length ? `<div class="people">${info.people.map(n => `<span>${esc(n)}</span>`).join('')}</div>` : ''}
-    <button class="btn inline" data-a="openDay" data-d="${date}">Открыть день</button>` : '';
+    <button class="btn inline" data-a="openDay" data-d="${date}">${info.open ? 'Открыть, игра идёт' : 'Открыть день'}</button>` : '';
   return `<div class="panel pad dinfo">${head(typeChip(info.type))}
     <div class="dmeta">${info.n} ${plural(info.n, 'человек', 'человека', 'человек')}${game ? ` · ${info.sets.length} ${plural(info.sets.length, 'сет', 'сета', 'сетов')}` : ''}</div>
     ${me}${sets ? `<div class="sets ${player ? 'pl' : ''}">${sets}</div>` : ''}${admin}</div>`;
@@ -1119,7 +1302,7 @@ function readQr(file) {
 }
 
 /* ---------- календарь ---------- */
-/** Сетка месяца. info(iso) → { type, mine } для точки и обводки «ты был». */
+/** Сетка месяца. info(iso) → { type, hollow }: зелёный кружок игра, чёрный тренировка, контур «без тебя». */
 function monthGrid(y, m, action, sel, info) {
   const first = new Date(y, m, 1), start = (first.getDay() + 6) % 7;
   const total = Math.ceil((start + new Date(y, m + 1, 0).getDate()) / 7) * 7;
@@ -1127,9 +1310,9 @@ function monthGrid(y, m, action, sel, info) {
   for (let i = 0; i < total; i++) {
     const d = new Date(y, m, 1 - start + i);
     const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const t = info(iso);
-    cells.push(`<button class="day ${d.getMonth() !== m ? 'out' : ''} ${iso === S.today ? 'today' : ''} ${iso === sel ? 'sel' : ''} ${t && t.mine ? 'mine' : ''}" data-a="${action}" data-d="${iso}">
-      <span>${d.getDate()}</span>${t ? `<i class="${t.type === 'тренировка' ? 'tr' : ''}"></i>` : ''}</button>`);
+    const t = info(iso), kind = t ? (t.type === 'тренировка' ? 'k-tr' : 'k-g') + (t.hollow ? ' hollow' : '') : '';
+    cells.push(`<button class="day ${d.getMonth() !== m ? 'out' : ''} ${iso === S.today ? 'today' : ''} ${iso === sel ? 'sel' : ''} ${kind}" data-a="${action}" data-d="${iso}">
+      <span>${d.getDate()}</span></button>`);
   }
   return cells.join('');
 }
@@ -1149,7 +1332,7 @@ function renderCal() {
       ${pickType ? `<div class="picktitle">${pickType === 'игра' ? 'Игра' : 'Тренировка'}: выбери день</div>` : ''}
       <div class="wk">${WEEK_HEAD}</div>
       <div class="days">${cells.join('')}</div>
-      <div class="legend"><span><i></i>игра</span><span><i class="tr"></i>тренировка</span></div>
+      <div class="legend"><span><i></i>игра</span><span><i class="tr"></i>тренировка</span><span><i class="today"></i>сегодня</span></div>
       <button class="btn go" data-a="pick" data-d="${S.today}">Сегодня</button></div>`);
 }
 
@@ -1165,10 +1348,10 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-a],[data-tab],[data-type]');
   if (!b || b.disabled) return;
   if (b.dataset.tab) {
-    S.tab = b.dataset.tab; S.armed = null; S.edit = null; S.bill = null;
+    S.tab = b.dataset.tab; S.armed = null; S.edit = null; S.bill = null; S.fromSet = false; S.setEdit = null;
     if (S.tab === 'board' || S.tab === 'me') S.stats = null;
     if (S.tab === 'self') { S.self.stats = null; S.self.edit = false; }
-    if (S.tab === 'cal' || S.tab === 'home') { S.calData = null; Object.keys(dayCache).forEach(k => delete dayCache[k]); }   // свежие данные
+    if (S.tab === 'cal' || S.tab === 'home') { S.calData = null; S.calSel = ''; S.calM = null; Object.keys(dayCache).forEach(k => delete dayCache[k]); }   // свежие данные, открываем на последнем дне
     render(); window.scrollTo(0, 0); return;
   }
   if (b.dataset.type) {
@@ -1207,12 +1390,61 @@ document.addEventListener('click', e => {
     case 'selfEdit': S.self.edit = true; render(); window.scrollTo(0, 0); break;
     case 'selfCancel': S.self.edit = false; if (S.me) delete S.me.photoNew; render(); window.scrollTo(0, 0); break;
     case 'toTeams': S.tab = 'teams'; render(); window.scrollTo(0, 0); break;
-    case 'toSet': S.tab = 'set'; render(); window.scrollTo(0, 0); break;
+    case 'toSet': {
+      S.fromSet = false; S.tab = 'set';
+      const short = shortTeams(S.pair || TEAMS);
+      if (short.length) toast('Неполный состав: ' + short.map(t => `${t} ${teamFill(t).tot} из ${S.teamSize}`).join(', '));
+      render(); window.scrollTo(0, 0); break;
+    }
+    case 'toTeamsSet': S.fromSet = true; S.tab = 'teams'; render(); window.scrollTo(0, 0); break;
+    case 'finish':
+      if (S.armed !== 'finish') { S.armed = 'finish'; render(); setTimeout(() => { if (S.armed === 'finish') { S.armed = null; render(); } }, 4000); break; }
+      S.armed = null; saveNow();
+      enqueue({ kind: 'fin', date: S.date });
+      S.done = true; S.sum = null; S.tab = 'sum';
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+      toast('Игра завершена. Игроки увидят итоги и рейтинг');
+      render(); window.scrollTo(0, 0); break;
+    case 'sumRetry': S.sum = null; render(); break;
+    case 'fix': S.armed = S.armed === 'fix' ? null : 'fix'; render(); break;
+    case 'fixCancel': S.armed = null; render(); break;
+    case 'fixAtt': S.armed = null; S.fix = 'att'; S.tab = 'att'; render(); window.scrollTo(0, 0); break;
+    case 'fixSets': S.armed = null; S.fix = 'sets'; S.tab = 'log'; render(); window.scrollTo(0, 0); break;
+    case 'fixDone':
+      saveNow(); S.fix = null; S.setEdit = null; S.sum = null; S.stats = null; S.tab = 'sum';
+      toast('Сохранено, итоги пересчитаются'); render(); window.scrollTo(0, 0); break;
+    case 'editSet': {
+      const s0 = S.sets.find(x => x.id === id);
+      if (s0) S.setEdit = JSON.parse(JSON.stringify(s0));
+      S.armed = null; render(); window.scrollTo(0, 0); break;
+    }
+    case 'eCancel': S.setEdit = null; S.armed = null; render(); break;
+    case 'eSave': saveSetEdit(); break;
+    case 'eg-': case 'eg+': { const k = b.dataset.k; S.setEdit[k] = Math.max(0, Math.min(12, S.setEdit[k] + (a === 'eg+' ? 1 : -1))); render(); break; }
+    case 'emove': {
+      const e2 = S.setEdit;
+      e2.sc1 = Number($('#e_sc1').value); e2.sc2 = Number($('#e_sc2').value);   // не теряем введённый счёт
+      e2.r1 = e2.r1.filter(x => x !== id); e2.r2 = e2.r2.filter(x => x !== id);
+      if (t === e2.t1) e2.r1.push(id); else if (t === e2.t2) e2.r2.push(id);
+      render(); break;
+    }
+    case 'edel':
+      if (S.armed !== 'edel') { S.armed = 'edel'; render(); break; }
+      S.armed = null;
+      S.sets = S.sets.filter(s => s.id !== S.setEdit.id);
+      enqueue({ kind: 'del', id: S.setEdit.id });
+      toast(`Сет №${S.setEdit.num} удалён`);
+      S.setEdit = null; S.sum = null; render(); break;
+    case 'help': S.help = !S.help; render(); break;
+    case 'toCal':
+      S.tab = 'cal'; S.calData = null; S.calSel = ''; S.calM = null; S.calWant = true;
+      Object.keys(dayCache).forEach(k => delete dayCache[k]);
+      render(); window.scrollTo(0, 0); break;
     case 'team':
       if (S.team[id] === t) delete S.team[id]; else S.team[id] = t;
       scheduleSave(); render(); break;
-    case 'size-': S.size[t] = Math.max(0, sizeOf(t) - 1); scheduleSave(); render(); break;
-    case 'size+': S.size[t] = Math.min(12, sizeOf(t) + 1); scheduleSave(); render(); break;
+    case 'size-': S.size[t] = Math.max(roster(t).length, sizeOf(t) - 1); scheduleSave(); render(); break;   // убавляем только китайцев
+    case 'size+': S.size[t] = Math.min(12, Math.max(sizeOf(t), roster(t).length) + 1); scheduleSave(); render(); break;
     case 'pair': S.pair = b.dataset.p.split(''); S.pick = { w: null, l: null, low: false }; scheduleSave(); render(); break;
     case 'win': S.pick.w = t; render(); break;
     case 'score': S.pick.l = Number(b.dataset.n); render(); break;
@@ -1234,6 +1466,10 @@ document.addEventListener('click', e => {
 
 document.addEventListener('input', e => {
   if (e.target.id === 'q') { S.q = e.target.value; setHTML($('#attList'), attList()); }
+  if ((e.target.id === 'e_sc1' || e.target.id === 'e_sc2') && S.setEdit) {
+    S.setEdit[e.target.id.slice(2)] = Number(e.target.value);
+    $('#ewin').textContent = winText(S.setEdit);
+  }
   if (e.target.id === 'f_rent' && S.bill) {
     S.bill.rent = e.target.value; S.bill.armed = false;
     const c = billCalcNow(), st = S.bill.st;
