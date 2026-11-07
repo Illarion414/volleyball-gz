@@ -63,6 +63,7 @@
     background: var(--white); color: var(--black); box-shadow: inset 0 0 0 1.5px var(--line); }
   .btn.go { background: var(--green); color: var(--white); box-shadow: none; }
   .btn[disabled] { background: #C9D2CB; color: var(--white); box-shadow: none; }
+  .btn.armed { background: var(--red); color: var(--white); box-shadow: none; }
   .btn.inline { margin-top: 12px; }
 
   /* ---------- списки игроков ---------- */
@@ -116,6 +117,10 @@
   .helpbox { font-size: 14px; line-height: 1.45; }
   .lnk.help { display: inline-block; border: 0; background: none; padding: 0 0 10px; font-size: 14px; }
   button.st { border: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+  .cardimg { display: block; width: 100%; border-radius: 12px; margin: 4px 0 12px; box-shadow: 0 1px 6px rgba(0,0,0,.12); }
+  .sendnote { font-size: 14px; color: var(--muted); margin: 0 0 10px; line-height: 1.4; }
+  .sendnote b { color: var(--black); }
+  .nobot { font-size: 13px; color: var(--red); margin: -2px 0 10px; }
   .tilehint { font-size: 12px; color: var(--muted); text-align: center; margin: -6px 0 12px; }
   .mini { width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--field); font-size: 18px; line-height: 1; }
   .trow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
@@ -356,7 +361,8 @@ const S = {
   cal: null, stats: null, board: 'xp', scope: 'top', me: null,
   self: { loaded: false, err: '', edit: false, stats: null },   // вкладка «Я» у админа
   bill: null,                                                    // экран «Счёт за тренировку»
-  done: false, fix: null, sum: null, setEdit: null, fromSet: false, help: false, calWant: false   // завершённая игра и корректировки
+  done: false, fix: null, sum: null, setEdit: null, fromSet: false, help: false, calWant: false,   // завершённая игра и корректировки
+  resBusy: false, cardBusy: false, cardImg: ''                                                      // рассылка итогов и картинка для WeChat
 };
 
 /* ---------- хранилище и связь с сервером ---------- */
@@ -479,7 +485,7 @@ async function load(date) {
     // Завершённая игра открывается итогами. Прошлые игровые дни с сетами завершены сами.
     S.done = (d.day && d.day.done) || (S.type === 'игра' && S.date < S.today && S.sets.length > 0) ||
       outbox.some(o => o.kind === 'fin' && o.date === S.date);
-    S.fix = null; S.sum = null; S.setEdit = null; S.fromSet = false;
+    S.fix = null; S.sum = null; S.setEdit = null; S.fromSet = false; S.cardImg = '';
     if (S.openType) {   // пришли с главной: «Записать игру» или «Записать тренировку»
       const empty = !(day && day.present && day.present.length) && !S.sets.length;
       if (empty) S.type = S.openType;
@@ -831,7 +837,132 @@ function viewSum() {
     <h2>Итоги игры</h2>
     <p class="lead">${s.sets} ${plural(s.sets, 'сет', 'сета', 'сетов')} · ${s.players.length} ${plural(s.players.length, 'человек', 'человека', 'человек')}. Игра завершена, игроки уже видят итоги и рейтинг.</p>
     ${S.armed === 'fix' ? fixChoice() : ''}
-    <div class="panel">${rows || '<div class="empty">Наших в этот день не было</div>'}</div>` };
+    <div class="panel">${rows || '<div class="empty">Наших в этот день не было</div>'}</div>
+    ${s.send ? sendPanel(s.send) : ''}
+    ${s.card ? cardPanel() : ''}` };
+}
+
+function sendLabel(sd) {
+  if (S.resBusy) return 'Рассылаю…';
+  if (S.armed === 'resSend') return 'Точно разослать? Нажми ещё раз';
+  if (!sd.todo) return sd.sent ? 'Итоги разосланы ✓' : 'Разослать некому: никого нет в боте';
+  if (!sd.sent) return `Разослать итоги игрокам (${sd.todo})`;
+  return sd.changed ? `Разослать исправленные (${sd.todo})` : `Дослать (${sd.todo})`;
+}
+
+function sendPanel(sd) {
+  const note = !sd.sent ? 'Каждый получит в Telegram свои сеты, победы, XP за игру и серию.'
+    : `Отправлено <b>${sd.sent} из ${sd.total}</b>.` + (sd.changed ? ` После правок цифры поменялись у ${sd.changed}, им уйдёт исправление.` : '');
+  return `<p class="sub-h">Рассылка игрокам</p>
+    <div class="panel pad"><p class="sendnote">${note}</p>
+    ${sd.nobot.length ? `<p class="nobot">Нет в боте, напиши сам: ${sd.nobot.map(esc).join(', ')}</p>` : ''}
+    <button class="btn ${sd.todo ? 'go' : ''} ${S.armed === 'resSend' ? 'armed' : ''}" data-a="resSend" ${sd.todo && !S.resBusy ? '' : 'disabled'}>${sendLabel(sd)}</button></div>`;
+}
+
+function cardPanel() {
+  return `<p class="sub-h">Для группы в WeChat</p>
+    <div class="panel pad"><p class="sendnote">Картинка с итогами дня. Бот пришлёт её тебе в Telegram вместе с текстом для подписи.
+    В таблицу попадают только те, кто дал согласие на публикацию.</p>
+    ${S.cardImg ? `<img class="cardimg" src="${S.cardImg}" alt="Итоги для WeChat">` : ''}
+    <button class="btn" data-a="resCard" ${S.cardBusy ? 'disabled' : ''}>${S.cardBusy ? 'Рисую и отправляю…' : S.cardImg ? 'Прислать ещё раз' : 'Картинка для WeChat'}</button></div>`;
+}
+
+async function sendResults() {
+  if (outbox.length) { toast('Подожди пару секунд: сохраняю изменения'); flush(); return; }
+  S.resBusy = true; S.armed = null; render();
+  try {
+    const r = await api('api_resultsSend', S.date);
+    S.sum = r;
+    const f = r.result.failed.length;
+    toast(`Отправлено: ${r.result.sent}` + (f ? `. Не дошло: ${f}` : ' 🙌'));
+  } catch (e) { toast('Не отправилось: ' + msg(e).replace(/^.*ОШИБКА:\s*/, '')); }
+  S.resBusy = false; render();
+}
+
+async function sendCard() {
+  S.cardBusy = true; render();
+  try {
+    S.cardImg = await drawCard(S.sum.card);
+    render();
+    await api('api_resultsCard', S.date, S.cardImg);
+    toast('Картинка у тебя в Telegram 📩');
+  } catch (e) { toast('Не получилось: ' + msg(e).replace(/^.*ОШИБКА:\s*/, '')); }
+  S.cardBusy = false; render();
+}
+
+/* ---------- картинка «Итоги субботы» для WeChat (1080 px в ширину) ---------- */
+async function drawCard(d) {
+  const DISP = '"Unbounded", "Arial Black", sans-serif', TXT = '"Golos Text", system-ui, sans-serif';
+  try { await Promise.all(['800 40px Unbounded', '400 20px "Golos Text"', '600 20px "Golos Text"', '700 20px "Golos Text"'].map(f => document.fonts.load(f, 'Итоги 123'))); } catch (e) {}
+  const W = 1080, P = 72, GREEN = '#00A04A', INK = '#007A38', RED = '#E21E26', MUTED = '#5b6660';
+  const noms = [];
+  if (d.best) noms.push({ bg: GREEN, fg: '#fff', label: '🏆 Команда дня', big: 'Команда ' + d.best.t,
+    sub: `${d.best.wins} ${plural(d.best.wins, 'победа', 'победы', 'побед')} из ${d.best.sets} ${plural(d.best.sets, 'сета', 'сетов', 'сетов')}, ${d.best.pct}%` });
+  if (d.hot) noms.push({ bg: RED, fg: '#fff', label: '🔥 Самый жаркий сет', big: `№${d.hot.num} · ${d.hot.ws}:${d.hot.ls}`,
+    sub: d.hot.deuce ? `${d.hot.w} дожала ${d.hot.l} на балансе` : `${d.hot.w} против ${d.hot.l}` });
+  if (d.rout && (!d.hot || d.rout.num !== d.hot.num)) noms.push({ bg: '#000', fg: '#fff', label: '💥 Разгром дня', big: `№${d.rout.num} · ${d.rout.ws}:${d.rout.ls}`, sub: `${d.rout.w} против ${d.rout.l}` });
+  if (d.most) noms.push({ bg: '#fff', fg: '#000', label: '💪 Больше всех на площадке', big: `${d.most.n} ${plural(d.most.n, 'сет', 'сета', 'сетов')}`, sub: d.most.who });
+  const nomRows = Math.ceil(noms.length / 2), rows = d.table.length + (d.hidden ? 1 : 0);
+  const yTiles = 300, yNoms = yTiles + 178 + 22, yTable = yNoms + nomRows * (166 + 22), tableH = rows ? 28 + 56 + rows * 55 : 0;
+  const yFoot = yTable + tableH + (rows ? 62 : 40), H = yFoot + 50;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+  const box = (x, y, w, h, r, fill) => { g.fillStyle = fill; g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); g.fill(); };
+  const text = (t, x, y, font, color, align, maxW) => {
+    g.font = font; g.fillStyle = color; g.textAlign = align || 'left';
+    let s = String(t);
+    if (maxW) while (s.length > 1 && g.measureText(s).width > maxW) s = s.slice(0, -2) + '…';
+    g.fillText(s, x, y); return g.measureText(s).width;
+  };
+  const fit = (t, size, weight, fam, maxW) => { let z = size; g.font = `${weight} ${z}px ${fam}`; while (z > 18 && g.measureText(t).width > maxW) { z -= 2; g.font = `${weight} ${z}px ${fam}`; } return `${weight} ${z}px ${fam}`; };
+  g.fillStyle = '#F2F5F2'; g.fillRect(0, 0, W, H);
+  g.fillStyle = GREEN; g.fillRect(0, 0, W / 2, 14); g.fillStyle = RED; g.fillRect(W / 2, 0, W / 2, 14);
+  text('ВОЛЕЙБОЛ ГУАНЧЖОУ', P, 100, `600 30px ${TXT}`, INK);
+  text(d.title, P, 195, fit(d.title, 84, 800, DISP, W - 2 * P), '#000');
+  const sub = `${d.dateText} · ${d.sets} ${plural(d.sets, 'сет', 'сета', 'сетов')} · ${d.ours} ${plural(d.ours, 'наш', 'наших', 'наших')} и друзья из Китая 🇨🇳`;
+  text(sub, P, 252, fit(sub, 34, 400, TXT, W - 2 * P), MUTED);
+  const tw = (W - 2 * P - 44) / 3;
+  [[d.sets, plural(d.sets, 'сет', 'сета', 'сетов')], [d.ours, plural(d.ours, 'наш игрок', 'наших игрока', 'наших игроков')],
+    [d.teams.map(t => t.wins).join('·'), 'победы команд ' + d.teams.map(t => t.t).join(' · ')]].forEach(([b, l], i) => {
+    const x = P + i * (tw + 22);
+    box(x, yTiles, tw, 178, 28, '#fff');
+    text(b, x + 28, yTiles + 92, fit(String(b), 64, 800, DISP, tw - 56), '#000');
+    text(l, x + 28, yTiles + 136, fit(l, 26, 400, TXT, tw - 56), MUTED);
+  });
+  const nw = (W - 2 * P - 22) / 2;
+  noms.forEach((n, i) => {
+    const x = P + (i % 2) * (nw + 22), y = yNoms + Math.floor(i / 2) * (166 + 22);
+    box(x, y, nw, 166, 28, n.bg);
+    g.globalAlpha = 0.85; text(n.label, x + 28, y + 52, `400 24px ${TXT}`, n.fg, 'left', nw - 56); g.globalAlpha = 1;
+    text(n.big, x + 28, y + 105, fit(n.big, 40, 800, DISP, nw - 56), n.fg);
+    g.globalAlpha = 0.85; text(n.sub, x + 28, y + 142, `400 24px ${TXT}`, n.fg, 'left', nw - 56); g.globalAlpha = 1;
+  });
+  if (rows) {
+    box(P, yTable, W - 2 * P, tableH, 28, '#fff');
+    const xL = P + 32, xX = W - P - 32, xW = xX - 130, xS = xW - 150;
+    let y = yTable + 14 + 38;
+    text('Игрок', xL, y, `600 22px ${TXT}`, '#8a948e'); text('Сеты', xS, y, `600 22px ${TXT}`, '#8a948e', 'right');
+    text('Победы', xW, y, `600 22px ${TXT}`, '#8a948e', 'right'); text('XP', xX, y, `600 22px ${TXT}`, '#8a948e', 'right');
+    const line = yy => { g.fillStyle = '#EEF1EE'; g.fillRect(xL, yy, xX - xL, 2); };
+    y = yTable + 14 + 56;
+    d.table.forEach(r => {
+      line(y);
+      text(r.name, xL, y + 38, `600 27px ${TXT}`, '#000', 'left', xS - 110 - xL);
+      text(r.sets, xS, y + 38, `400 27px ${TXT}`, MUTED, 'right');
+      text(r.wins, xW, y + 38, `400 27px ${TXT}`, MUTED, 'right');
+      text('+' + r.xp, xX, y + 38, `800 28px ${DISP}`, INK, 'right');
+      y += 55;
+    });
+    if (d.hidden) { line(y); text(`и ещё ${d.hidden} ${plural(d.hidden, 'игрок', 'игрока', 'игроков')} 🙌`, xL, y + 38, `400 27px ${TXT}`, MUTED); }
+  }
+  let x = P + text('Следующая игра: ', P, yFoot, `400 26px ${TXT}`, MUTED);
+  text('суббота, ' + d.next, x, yFoot, `700 26px ${TXT}`, '#000');
+  if (d.rating) {
+    const w2 = (g.font = `700 26px ${TXT}`, g.measureText(d.rating).width);
+    text(d.rating, W - P, yFoot, `700 26px ${TXT}`, '#000', 'right');
+    text('Рейтинг силы: ', W - P - w2, yFoot, `400 26px ${TXT}`, MUTED, 'right');
+  }
+  return cv.toDataURL('image/png');
 }
 
 // Редактор сета из журнала: счёт, кто в какой команде, сколько китайцев.
@@ -1406,6 +1537,10 @@ document.addEventListener('click', e => {
       toast('Игра завершена. Игроки увидят итоги и рейтинг');
       render(); window.scrollTo(0, 0); break;
     case 'sumRetry': S.sum = null; render(); break;
+    case 'resSend':
+      if (S.armed !== 'resSend') { S.armed = 'resSend'; render(); setTimeout(() => { if (S.armed === 'resSend') { S.armed = null; render(); } }, 4000); break; }
+      sendResults(); break;
+    case 'resCard': sendCard(); break;
     case 'fix': S.armed = S.armed === 'fix' ? null : 'fix'; render(); break;
     case 'fixCancel': S.armed = null; render(); break;
     case 'fixAtt': S.armed = null; S.fix = 'att'; S.tab = 'att'; render(); window.scrollTo(0, 0); break;
