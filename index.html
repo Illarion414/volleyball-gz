@@ -1522,7 +1522,7 @@ async function openBal() {
 async function balCall(fn, ...args) {
   if (!S.bal || S.bal.busy) return;
   S.bal.busy = true; S.bal.armed = ''; render();
-  try { const st = await api(fn, ...args); if (S.bal) S.bal.st = st; if (st.note) toast(st.note); }
+  try { const st = await api(fn, ...args); if (S.bal) { S.bal.st = st; S.bal.cash = ''; S.bal.otherVal = ''; } if (st.note) toast(st.note); }
   catch (e) { toast(balErr(e)); }
   if (S.bal) { S.bal.busy = false; render(); }
 }
@@ -1548,7 +1548,7 @@ function viewBal() {
     <div class="bacts"><button class="mini go${cls('ok' + r.rid)}" data-a="balOk" data-id="${esc(r.rid)}" ${dis}>${arm('ok' + r.rid, 'Точно зачислить?', `Зачислить ${r.amount} ¥`)}</button>
       <button class="mini" data-a="balOther" data-id="${esc(r.rid)}" ${dis}>Другая сумма</button>
       <button class="mini bad${cls('no' + r.rid)}" data-a="balNo" data-id="${esc(r.rid)}" ${dis}>${arm('no' + r.rid, 'Точно отклонить?', 'Отклонить')}</button>
-      ${b.other === r.rid ? `<input id="f_other" type="number" inputmode="numeric" min="1" placeholder="Сколько пришло, ¥"><button class="mini go" data-a="balOtherOk" data-id="${esc(r.rid)}" ${dis}>Зачислить</button>` : ''}</div>`).join('');
+      ${b.other === r.rid ? `<input id="f_other" type="number" inputmode="numeric" min="1" placeholder="Сколько пришло, ¥" value="${esc(b.otherVal || '')}"><button class="mini go" data-a="balOtherOk" data-id="${esc(r.rid)}" ${dis}>Зачислить</button>` : ''}</div>`).join('');
   const booked = {};
   g.list.forEach(x => { booked[x.id] = x.status; });
   const yes = g.list.filter(x => x.status === 'подтвердил'), noSeat = yes.filter(x => !x.seat).length;
@@ -1564,9 +1564,9 @@ function viewBal() {
       ${open ? `<div class="bacts">
         <button class="mini${cls('qr' + p.id)}" data-a="balQr" data-id="${esc(p.id)}" ${p.bot ? dis : 'disabled'}>${arm('qr' + p.id, 'Отправить QR игроку?', `QR на пополнение, ${st.packSum} ¥`)}</button>
         ${canBook ? `<button class="mini${cls('book' + p.id)}" data-a="balBook" data-id="${esc(p.id)}" ${dis}>${arm('book' + p.id, `Списать ${st.price} ¥ и записать?`, `Бронь на ${gd}`)}</button>` : ''}
-        <input id="f_cash" type="number" inputmode="numeric" min="1" placeholder="Сумма, ¥">
-        <button class="mini go${b.armed.indexOf('balCash' + p.id) === 0 ? ' armed' : ''}" data-a="balCash" data-id="${esc(p.id)}" ${dis}>${b.armed.indexOf('balCash' + p.id) === 0 ? 'Точно внести?' : 'Внести наличные'}</button>
-        <button class="mini bad${b.armed.indexOf('balRefund' + p.id) === 0 ? ' armed' : ''}" data-a="balRefund" data-id="${esc(p.id)}" ${dis}>${b.armed.indexOf('balRefund' + p.id) === 0 ? 'Точно вернуть?' : 'Вернуть деньги'}</button></div>` : ''}`;
+        <input id="f_cash" type="number" inputmode="numeric" min="1" placeholder="Сумма, ¥" value="${esc(b.cash || '')}">
+        <button class="mini go${b.armed.indexOf('balCash' + p.id) === 0 ? ' armed' : ''}" data-a="balCash" data-id="${esc(p.id)}" ${dis}>${b.armed.indexOf('balCash' + p.id) === 0 ? `Внести ${esc(b.cash)} ¥?` : 'Внести наличные'}</button>
+        <button class="mini bad${b.armed.indexOf('balRefund' + p.id) === 0 ? ' armed' : ''}" data-a="balRefund" data-id="${esc(p.id)}" ${dis}>${b.armed.indexOf('balRefund' + p.id) === 0 ? `Вернуть ${esc(b.cash)} ¥?` : 'Вернуть деньги'}</button></div>` : ''}`;
   }).join('');
   const checks = st.requests.filter(r => r.status === 'чек на проверке').length, silent = g.list.filter(x => x.status === 'спросили').length;
   const todo = [];
@@ -1627,6 +1627,12 @@ function myBalHtml() {
 }
 
 /* ---------- события ---------- */
+// Суммы в «Балансе игр» запоминаем при вводе: экран перерисовывается, и поле иначе обнулялось бы.
+document.addEventListener('input', e => {
+  if (!S.bal) return;
+  if (e.target.id === 'f_cash') { S.bal.cash = e.target.value; S.bal.armed = ''; }
+  if (e.target.id === 'f_other') S.bal.otherVal = e.target.value;
+});
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-a],[data-tab],[data-type]');
   if (!b || b.disabled) return;
@@ -1650,17 +1656,18 @@ document.addEventListener('click', e => {
     case 'balClose': S.bal = null; render(); window.scrollTo(0, 0); break;
     case 'balRefresh': balCall('api_balances'); break;
     case 'balManual': S.bal.manual = !S.bal.manual; S.bal.sel = ''; render(); break;
-    case 'balSel': S.bal.sel = S.bal.sel === id ? '' : id; S.bal.armed = ''; render(); break;
+    case 'balSel': S.bal.sel = S.bal.sel === id ? '' : id; S.bal.armed = ''; S.bal.cash = ''; render(); break;
     case 'balOk': balArm('ok' + id, () => balCall('api_topupDecide', id, true, null)); break;
     case 'balOther': S.bal.other = S.bal.other === id ? '' : id; render(); break;
-    case 'balOtherOk': { const n = Math.round(Number(($('#f_other') || {}).value)); if (!(n > 0)) { toast('Введи сумму'); break; } S.bal.other = ''; balCall('api_topupDecide', id, true, n); break; }
+    case 'balOtherOk': { const n = Math.round(Number(S.bal.otherVal || ($('#f_other') || {}).value)); if (!(n > 0)) { toast('Введи сумму'); break; } S.bal.other = ''; balCall('api_topupDecide', id, true, n); break; }
     case 'balNo': balArm('no' + id, () => balCall('api_topupDecide', id, false, null)); break;
     case 'balOff': balArm('off' + id, () => balCall('api_bookingSet', S.bal.st.game.date, id, false)); break;
     case 'balBook': balArm('book' + id, () => balCall('api_bookingSet', S.bal.st.game.date, id, true)); break;
     case 'balSeat': balArm('seat', () => balCall('api_bookingSeat', S.bal.st.game.date)); break;
     case 'balQr': balArm('qr' + id, () => balCall('api_topupRequest', id)); break;
     case 'balCash': case 'balRefund': {
-      const n = Math.round(Number(($('#f_cash') || {}).value));
+      const n = Math.round(Number(S.bal.cash || ($('#f_cash') || {}).value));
+      S.bal.cash = n > 0 ? String(n) : '';
       if (!(n > 0)) { toast('Введи сумму'); break; }
       balArm(a + id + n, () => balCall('api_balanceAdjust', id, a === 'balCash' ? n : -n, a === 'balCash' ? 'внесено наличными' : 'возврат денег'));
       break;
