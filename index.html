@@ -225,6 +225,30 @@
   .big span { font-size: 14px; opacity: .85; }
   .big.game { background: var(--green); }
   .big.train { background: var(--black); }
+  .big.bal { background: var(--white); color: var(--black); box-shadow: inset 0 0 0 1.5px var(--line); }
+  .big.bal svg { background: var(--green-soft); color: var(--green-ink); }
+  .bacts { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 0 14px; border-bottom: 1px solid var(--line); }
+  .bacts:last-child { border-bottom: 0; }
+  .mini { flex: 0 0 auto; width: auto; min-height: 40px; white-space: nowrap; border: 0; border-radius: 11px; padding: 10px 13px; font-size: 14px; line-height: 1.2; font-weight: 600; background: var(--field); color: var(--black); }
+  .mini.go { background: var(--green); color: var(--white); }
+  .mini.bad { background: var(--red-soft); color: var(--red); }
+  .mini.armed { background: var(--red); color: var(--white); }
+  .mini[disabled] { opacity: .45; }
+  .bacts input { flex: 1 1 100%; min-width: 0; border: 0; border-radius: 11px; background: var(--field); padding: 10px 12px; font-size: 15px; }
+  .brow.open { border-bottom: 0; }
+  .brow .sum { font-weight: 700; white-space: nowrap; }
+  .brow .sum small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); text-align: right; }
+  .oprow { display: flex; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .oprow:last-child { border-bottom: 0; }
+  .oprow span { flex: 1; min-width: 0; }
+  .oprow small { display: block; color: var(--muted); font-size: 12px; }
+  .oprow b.plus { color: var(--green-ink); }
+  .balhero { background: var(--green-soft); border-radius: 18px; padding: 16px 18px; margin-bottom: 12px; }
+  .balhero b { display: block; font: 800 30px/1.1 var(--display); color: var(--green-ink); }
+  .balhero span { font-size: 14px; }
+  .trow2 { padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 15px; line-height: 1.4; }
+  .trow2:last-child { border-bottom: 0; }
+  .brow[disabled] { color: inherit; opacity: 1; cursor: default; }
   .big:active { transform: scale(.98); }
   .picktitle { font: 700 15px/1.2 var(--display); color: var(--green-ink); margin: -2px 0 10px; text-align: center; }
   .drow { display: flex; width: 100%; align-items: center; gap: 10px; border: 0; background: none; padding: 12px 0; border-bottom: 1px solid var(--line); text-align: left; }
@@ -361,6 +385,7 @@ const S = {
   cal: null, stats: null, board: 'xp', scope: 'top', me: null,
   self: { loaded: false, err: '', edit: false, stats: null },   // вкладка «Я» у админа
   bill: null,                                                    // экран «Счёт за тренировку»
+  bal: null, myBal: null,                                        // «Баланс игр»: экран админа и блок игрока
   done: false, fix: null, sum: null, setEdit: null, fromSet: false, help: false, calWant: false,   // завершённая игра и корректировки
   resBusy: false, cardBusy: false, cardImg: ''                                                      // рассылка итогов и картинка для WeChat
 };
@@ -617,6 +642,7 @@ const ICONS = {
 ICONS.self = ICONS.card;
 ICONS.home = '<path d="M3 11l9-7 9 7M5 9.5V20h5v-6h4v6h5V9.5"/>';
 ICONS.sum = '<path d="M5 20V12M10 20V7M15 20v-5M20 20V4"/>';
+ICONS.bal = '<rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18M7 15h4"/>';
 ICONS.cal = '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>';
 const TAB_NAMES = { att: 'Пришли', teams: 'Команды', set: 'Сет', log: 'Журнал', board: 'Рейтинг', card: 'Карточка', me: 'Мои итоги', self: 'Я', home: 'Главная', cal: 'Календарь', sum: 'Итоги' };
 const DAY_TABS = ['att', 'teams', 'set', 'log'];
@@ -649,6 +675,9 @@ function render() {
     act = `<button class="btn" data-a="cancelEdit">Отмена</button><button class="btn go" data-a="saveCard">Сохранить</button>`;
   } else if (S.bill) {
     const v = viewBill();
+    setHTML(app, v.html); act = v.action || '';
+  } else if (S.bal) {
+    const v = viewBal();
     setHTML(app, v.html); act = v.action || '';
   } else if (S.setEdit) {
     const v = viewSetEdit();
@@ -1062,7 +1091,9 @@ const HELP = {
 
 function viewMe() {
   if (!S.stats) { loadStats(); return { html: '<h2>Мои итоги</h2><div class="empty">Считаю…</div>' }; }
-  return statsView(S.stats.me || null, '');
+  const v = statsView(S.stats.me || null, '');
+  v.html += myBalHtml();
+  return v;
 }
 
 // Шапка с фото и именем над итогами во вкладке «Я» у админа.
@@ -1248,6 +1279,8 @@ function viewHome() {
         <b>Записать игру</b><span>Пришедшие, команды и сеты</span></button>
       <button class="big train" data-a="start" data-t="тренировка"><svg viewBox="0 0 24 24">${ICONS.att}</svg>
         <b>Записать тренировку</b><span>Пришедшие и счёт за зал</span></button>
+      <button class="big bal" data-a="bal"><svg viewBox="0 0 24 24">${ICONS.bal}</svg>
+        <b>Баланс игр</b><span>Пополнения, брони на субботу, остатки</span></button>
     </div>
     <p class="sub-h">Последние дни</p>
     <div class="panel">${!S.calData ? '<div class="empty">Загружаю…</div>' : S.calData.err ? `<div class="warn">${esc(S.calData.err)}</div>`
@@ -1474,13 +1507,132 @@ function toast(text) {
   clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 2800);
 }
 
+/* ---------- баланс игр ---------- */
+const BK_LABEL = { 'спросили': ['wait', 'ждём ответ'], 'подтвердил': ['ok', 'подтвердил'], 'отказался': ['', 'пропускает'],
+  'не хватает баланса': ['bad', 'нет баланса'], 'бронь снята': ['', 'бронь снята'] };
+const balErr = e => msg(e).replace(/^.*ОШИБКА:\s*/, '');
+const gamesWord = n => `${n} ${plural(n, 'игра', 'игры', 'игр')}`;
+
+async function openBal() {
+  S.bal = { st: null, busy: true, err: '', sel: '', armed: '', other: '', manual: false };
+  render(); window.scrollTo(0, 0);
+  try { S.bal.st = await api('api_balances'); } catch (e) { S.bal.err = balErr(e); }
+  if (S.bal) { S.bal.busy = false; render(); }
+}
+async function balCall(fn, ...args) {
+  if (!S.bal || S.bal.busy) return;
+  S.bal.busy = true; S.bal.armed = ''; render();
+  try { const st = await api(fn, ...args); if (S.bal) S.bal.st = st; if (st.note) toast(st.note); }
+  catch (e) { toast(balErr(e)); }
+  if (S.bal) { S.bal.busy = false; render(); }
+}
+// Денежные кнопки срабатывают со второго нажатия.
+function balArm(k, fn) {
+  if (S.bal.armed !== k) { S.bal.armed = k; render(); setTimeout(() => { if (S.bal && S.bal.armed === k) { S.bal.armed = ''; render(); } }, 4000); return; }
+  fn();
+}
+function opRow(o, withName) {
+  const title = o.type === 'игра' ? `Игра ${dateTitle(o.game)}` : o.type === 'возврат брони' ? `Возврат за ${dateTitle(o.game)}` : o.type === 'пополнение' ? 'Пополнение' : (o.note || 'Корректировка');
+  return `<div class="oprow"><span>${withName ? esc(o.name) + ' · ' : ''}${esc(title)}<small>${esc(o.at)}${o.note && o.type !== 'корректировка' ? ' · ' + esc(o.note) : ''}</small></span>
+    <b class="${o.amount > 0 ? 'plus' : ''}">${o.amount > 0 ? '+' : ''}${o.amount} ¥</b></div>`;
+}
+
+function viewBal() {
+  const b = S.bal, st = b.st, dis = b.busy ? 'disabled' : '';
+  const back = `<button class="btn" data-a="balClose">Назад</button>`;
+  if (!st) return { action: back, html: `<h2>Баланс игр</h2>${b.err ? `<div class="panel pad"><div class="warn">${esc(b.err)}</div></div>` : '<div class="empty">Загружаю…</div>'}` };
+  const arm = (k, on, off) => b.armed === k ? on : off, cls = k => b.armed === k ? ' armed' : '';
+  const g = st.game, gd = dateTitle(g.date);
+  const reqs = st.requests.map(r => `<div class="brow open"><span class="nm">${esc(r.name)}<small>${r.status === 'чек на проверке' ? 'чек пришёл тебе в бот, сверь сумму' : 'QR отправлен, чек ещё не прислал'}</small></span>
+      <span class="chip ${r.status === 'чек на проверке' ? 'wait' : ''}">${r.amount} ¥</span></div>
+    <div class="bacts"><button class="mini go${cls('ok' + r.rid)}" data-a="balOk" data-id="${esc(r.rid)}" ${dis}>${arm('ok' + r.rid, 'Точно зачислить?', `Зачислить ${r.amount} ¥`)}</button>
+      <button class="mini" data-a="balOther" data-id="${esc(r.rid)}" ${dis}>Другая сумма</button>
+      <button class="mini bad${cls('no' + r.rid)}" data-a="balNo" data-id="${esc(r.rid)}" ${dis}>${arm('no' + r.rid, 'Точно отклонить?', 'Отклонить')}</button>
+      ${b.other === r.rid ? `<input id="f_other" type="number" inputmode="numeric" min="1" placeholder="Сколько пришло, ¥"><button class="mini go" data-a="balOtherOk" data-id="${esc(r.rid)}" ${dis}>Зачислить</button>` : ''}</div>`).join('');
+  const booked = {};
+  g.list.forEach(x => { booked[x.id] = x.status; });
+  const yes = g.list.filter(x => x.status === 'подтвердил'), noSeat = yes.filter(x => !x.seat).length;
+  const books = g.list.map(x => {
+    const l = BK_LABEL[x.status] || ['', x.status];
+    return `<div class="brow${x.status === 'подтвердил' ? ' open' : ''}"><span class="nm">${esc(x.name)}${x.seat ? '<small>место занято, игрок знает</small>' : ''}</span><span class="chip ${l[0]}">${l[1]}</span></div>
+      ${x.status === 'подтвердил' ? `<div class="bacts"><button class="mini bad${cls('off' + x.id)}" data-a="balOff" data-id="${esc(x.id)}" ${dis}>${arm('off' + x.id, `Снять и вернуть ${st.price} ¥?`, 'Снять бронь')}</button></div>` : ''}`;
+  }).join('');
+  const people = st.players.slice().sort((x, y) => (y.member - x.member) || x.name.localeCompare(y.name, 'ru')).map(p => {
+    const open = b.sel === p.id, canBook = p.balance >= st.price && booked[p.id] !== 'подтвердил';
+    return `<button class="brow${open ? ' open' : ''}" ${b.manual ? `data-a="balSel" data-id="${esc(p.id)}"` : 'disabled'}><span class="nm">${esc(p.name)}${p.bot ? '' : '<small class="miss">нет в боте</small>'}</span>
+        <span class="sum">${p.member ? p.balance + ' ¥' : 'без баланса'}${p.member ? `<small>${p.games ? 'на ' + gamesWord(p.games).replace('игра', 'игру') : 'на игру не хватает'}</small>` : ''}</span></button>
+      ${open ? `<div class="bacts">
+        <button class="mini${cls('qr' + p.id)}" data-a="balQr" data-id="${esc(p.id)}" ${p.bot ? dis : 'disabled'}>${arm('qr' + p.id, 'Отправить QR игроку?', `QR на пополнение, ${st.packSum} ¥`)}</button>
+        ${canBook ? `<button class="mini${cls('book' + p.id)}" data-a="balBook" data-id="${esc(p.id)}" ${dis}>${arm('book' + p.id, `Списать ${st.price} ¥ и записать?`, `Бронь на ${gd}`)}</button>` : ''}
+        <input id="f_cash" type="number" inputmode="numeric" min="1" placeholder="Сумма, ¥">
+        <button class="mini go${b.armed.indexOf('balCash' + p.id) === 0 ? ' armed' : ''}" data-a="balCash" data-id="${esc(p.id)}" ${dis}>${b.armed.indexOf('balCash' + p.id) === 0 ? 'Точно внести?' : 'Внести наличные'}</button>
+        <button class="mini bad${b.armed.indexOf('balRefund' + p.id) === 0 ? ' armed' : ''}" data-a="balRefund" data-id="${esc(p.id)}" ${dis}>${b.armed.indexOf('balRefund' + p.id) === 0 ? 'Точно вернуть?' : 'Вернуть деньги'}</button></div>` : ''}`;
+  }).join('');
+  const checks = st.requests.filter(r => r.status === 'чек на проверке').length, silent = g.list.filter(x => x.status === 'спросили').length;
+  const todo = [];
+  if (checks) todo.push(`💳 <b>Проверь ${checks} ${plural(checks, 'чек', 'чека', 'чеков')}</b> и зачисли деньги. Они ниже, в «Пополнения ждут тебя».`);
+  if (noSeat) todo.push(`🏐 <b>Займи ${plural(noSeat, 'место', 'места', 'мест')} ${noSeat} ${plural(noSeat, 'игроку', 'игрокам', 'игрокам')}</b> на ${esc(gd)} в китайском приложении, потом нажми кнопку.
+    <button class="btn inline go${cls('seat')}" data-a="balSeat" ${dis}>${arm('seat', `Написать ${noSeat} ${plural(noSeat, 'игроку', 'игрокам', 'игрокам')} «место за тобой»?`, `Места занял, сообщить игрокам (${noSeat})`)}</button>`);
+  if (silent && !g.closed) todo.push(`⏳ Ждём ответ от ${silent} ${plural(silent, 'игрока', 'игроков', 'игроков')} до воскресенья ${g.closeHour}:00. Молчащим бот сам напомнит в воскресенье утром.`);
+  if (!todo.length) todo.push(`✅ Сейчас от тебя ничего не нужно. Опрос на следующую игру бот разошлёт сам в субботу в ${g.askHour}:00.`);
+  return { action: `${back}<button class="btn" data-a="balRefresh" ${dis}>Обновить</button>`, html: `
+    <h2>Баланс игр</h2>
+    <div class="balhero"><b>${st.total} ¥</b><span>предоплата игроков у тебя на руках · игра ${st.price} ¥, пакет ${gamesWord(st.pack).replace('игра', 'игру')} = ${st.packSum} ¥</span></div>
+    <p class="sub-h">Что сделать сейчас</p>
+    <div class="panel pad todo">${todo.map(x => `<div class="trow2">${x}</div>`).join('')}</div>
+    ${reqs ? `<p class="sub-h">Пополнения ждут тебя</p><div class="panel pad">${reqs}</div>` : ''}
+    <p class="sub-h">Брони на ${esc(gd)}</p>
+    <p class="lead">${g.closed ? 'Приём ответов закрыт, можно бронировать.' : `Бот спрашивает в субботу вечером, ответы до воскресенья ${g.closeHour}:00.`} Подтвердили: ${yes.length}</p>
+    <div class="panel pad">${books || '<div class="empty">Опрос на эту игру ещё не рассылался</div>'}</div>
+    <p class="sub-h">Балансы игроков</p>
+    <div class="panel pad">${people || '<div class="empty">Игроков пока нет</div>'}</div>
+    <button class="btn inline" data-a="balManual">${b.manual ? 'Скрыть ручные операции' : 'Ручные операции'}</button>
+    ${b.manual ? '<p class="lead" style="margin-top:10px">Для исключений: нажми на игрока выше. QR на пополнение, бронь по просьбе в WeChat, наличные, возврат денег.</p>' : ''}
+    <p class="sub-h">Последние операции</p>
+    <div class="panel pad">${st.ops.map(o => opRow(o, true)).join('') || '<div class="empty">Операций пока нет</div>'}</div>` };
+}
+
+/* Блок «Баланс игр» у игрока в «Моих итогах». */
+async function loadMyBal() {
+  S.myBal = { loading: true };
+  try { S.myBal = await api('api_myBalance'); } catch (e) { S.myBal = { err: balErr(e) }; }
+  render();
+}
+async function myTopup() {
+  if (S.myBal.busy) return;
+  S.myBal.busy = true; render();
+  try { S.myBal = await api('api_topup'); toast('Отправил QR в чат с ботом. Оплати и пришли туда чек'); }
+  catch (e) { S.myBal.busy = false; toast(balErr(e)); }
+  render();
+}
+function myBalHtml() {
+  if (S.role !== 'player') return '';
+  if (!S.myBal) { loadMyBal(); }
+  const m = S.myBal, head = '<p class="sub-h">Баланс игр</p>';
+  if (m.loading) return `${head}<div class="panel pad">Загружаю…</div>`;
+  if (m.err) return `${head}<div class="panel pad"><div class="warn">${esc(m.err)}</div></div>`;
+  const bk = m.booking, bl = bk && {
+    'подтвердил': bk.seat ? `✅ Место на ${dateTitle(bk.date)} забронировано за тобой` : `✅ Бронь на ${dateTitle(bk.date)} подтверждена, Сергей занимает место`,
+    'спросили': `Бот ждёт твой ответ про игру ${dateTitle(bk.date)}. Ответь в чате с ботом`,
+    'не хватает баланса': `На игру ${dateTitle(bk.date)} не хватает баланса`,
+    'отказался': `Игру ${dateTitle(bk.date)} ты пропускаешь` }[bk.status];
+  const req = m.request ? (m.request.status === 'чек на проверке' ? `Чек на ${m.request.amount} ¥ на проверке у Сергея` : `Ждём чек на ${m.request.amount} ¥. Пришли скриншот в чат с ботом`) : '';
+  const intro = m.member ? '' : `<p class="lead">Не успеваешь занять место в китайском приложении? Пополни баланс на ${gamesWord(m.pack).replace('игра', 'игру')}, и Сергей будет бронировать место за тебя. Каждую субботу вечером бот спросит, идёшь ли ты на следующую игру.</p>`;
+  return `${head}${intro}
+    <div class="balhero"><b>${m.balance} ¥</b><span>${m.games ? 'хватит на ' + gamesWord(m.games).replace('игра', 'игру') : 'на игру не хватает'} · игра ${m.price} ¥</span></div>
+    ${bl ? `<div class="panel pad">${esc(bl)}</div>` : ''}${req ? `<div class="panel pad">${esc(req)}</div>` : ''}
+    ${m.request && m.request.status === 'чек на проверке' ? '' : `<button class="btn go" data-a="myTop" ${m.busy ? 'disabled' : ''}>${m.request ? 'Прислать QR ещё раз' : `Пополнить на ${gamesWord(m.pack).replace('игра', 'игру')}, ${m.packSum} ¥`}</button>`}
+    ${m.ops.length ? `<button class="btn inline" data-a="myOps">${m.open ? 'Скрыть историю' : 'История операций'}</button>` : ''}
+    ${m.open ? `<div class="panel pad" style="margin-top:12px">${m.ops.map(o => opRow(o, false)).join('')}</div>` : ''}`;
+}
+
 /* ---------- события ---------- */
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-a],[data-tab],[data-type]');
   if (!b || b.disabled) return;
   if (b.dataset.tab) {
-    S.tab = b.dataset.tab; S.armed = null; S.edit = null; S.bill = null; S.fromSet = false; S.setEdit = null;
-    if (S.tab === 'board' || S.tab === 'me') S.stats = null;
+    S.tab = b.dataset.tab; S.armed = null; S.edit = null; S.bill = null; S.bal = null; S.fromSet = false; S.setEdit = null;
+    if (S.tab === 'board' || S.tab === 'me') { S.stats = null; S.myBal = null; }
     if (S.tab === 'self') { S.self.stats = null; S.self.edit = false; }
     if (S.tab === 'cal' || S.tab === 'home') { S.calData = null; S.calSel = ''; S.calM = null; Object.keys(dayCache).forEach(k => delete dayCache[k]); }   // свежие данные, открываем на последнем дне
     render(); window.scrollTo(0, 0); return;
@@ -1494,6 +1646,27 @@ document.addEventListener('click', e => {
   const a = b.dataset.a, id = b.dataset.id, t = b.dataset.t;
   switch (a) {
     case 'reload': load(S.date); break;
+    case 'bal': openBal(); break;
+    case 'balClose': S.bal = null; render(); window.scrollTo(0, 0); break;
+    case 'balRefresh': balCall('api_balances'); break;
+    case 'balManual': S.bal.manual = !S.bal.manual; S.bal.sel = ''; render(); break;
+    case 'balSel': S.bal.sel = S.bal.sel === id ? '' : id; S.bal.armed = ''; render(); break;
+    case 'balOk': balArm('ok' + id, () => balCall('api_topupDecide', id, true, null)); break;
+    case 'balOther': S.bal.other = S.bal.other === id ? '' : id; render(); break;
+    case 'balOtherOk': { const n = Math.round(Number(($('#f_other') || {}).value)); if (!(n > 0)) { toast('Введи сумму'); break; } S.bal.other = ''; balCall('api_topupDecide', id, true, n); break; }
+    case 'balNo': balArm('no' + id, () => balCall('api_topupDecide', id, false, null)); break;
+    case 'balOff': balArm('off' + id, () => balCall('api_bookingSet', S.bal.st.game.date, id, false)); break;
+    case 'balBook': balArm('book' + id, () => balCall('api_bookingSet', S.bal.st.game.date, id, true)); break;
+    case 'balSeat': balArm('seat', () => balCall('api_bookingSeat', S.bal.st.game.date)); break;
+    case 'balQr': balArm('qr' + id, () => balCall('api_topupRequest', id)); break;
+    case 'balCash': case 'balRefund': {
+      const n = Math.round(Number(($('#f_cash') || {}).value));
+      if (!(n > 0)) { toast('Введи сумму'); break; }
+      balArm(a + id + n, () => balCall('api_balanceAdjust', id, a === 'balCash' ? n : -n, a === 'balCash' ? 'внесено наличными' : 'возврат денег'));
+      break;
+    }
+    case 'myTop': myTopup(); break;
+    case 'myOps': S.myBal.open = !S.myBal.open; render(); break;
     case 'cal': { const d = new Date((S.date || S.today) + 'T12:00:00'); S.cal = { y: d.getFullYear(), m: d.getMonth() }; renderCal(); break; }
     case 'calClose': S.cal = null; renderCal(); break;
     case 'calPrev': S.cal.m--; if (S.cal.m < 0) { S.cal.m = 11; S.cal.y--; } renderCal(); break;
@@ -1501,7 +1674,7 @@ document.addEventListener('click', e => {
     case 'pick': { const t = S.cal && S.cal.pickType; S.cal = null; renderCal(); if (t || b.dataset.d !== S.date) openDay(b.dataset.d, t); break; }
     case 'start': { const d = new Date(S.today + 'T12:00:00'); S.cal = { y: d.getFullYear(), m: d.getMonth(), pickType: b.dataset.t }; renderCal(); break; }
     case 'openDay': openDay(b.dataset.d, null); break;
-    case 'home': saveNow(); S.tab = 'home'; S.bill = null; S.edit = null; S.calData = null; render(); window.scrollTo(0, 0); break;
+    case 'home': saveNow(); S.tab = 'home'; S.bill = null; S.bal = null; S.edit = null; S.calData = null; render(); window.scrollTo(0, 0); break;
     case 'calSel': S.calSel = b.dataset.d; render(); break;
     case 'cmPrev': S.calM.m--; if (S.calM.m < 0) { S.calM.m = 11; S.calM.y--; } render(); break;
     case 'cmNext': S.calM.m++; if (S.calM.m > 11) { S.calM.m = 0; S.calM.y++; } render(); break;
