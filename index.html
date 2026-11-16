@@ -968,15 +968,17 @@ async function drawCard(d) {
   });
   if (rows) {
     box(P, yTable, W - 2 * P, tableH, 28, '#fff');
-    const xL = P + 32, xX = W - P - 32, xW = xX - 130, xS = xW - 150;
+    const xL = P + 32, xX = W - P - 32, xW = xX - 130, xS = xW - 150, xT = xS - 120, withTeam = d.table.some(r => r.team);
     let y = yTable + 14 + 38;
     text('Игрок', xL, y, `600 22px ${TXT}`, '#8a948e'); text('Сеты', xS, y, `600 22px ${TXT}`, '#8a948e', 'right');
+    if (withTeam) text('Команда', xT, y, `600 22px ${TXT}`, '#8a948e', 'right');
     text('Победы', xW, y, `600 22px ${TXT}`, '#8a948e', 'right'); text('XP', xX, y, `600 22px ${TXT}`, '#8a948e', 'right');
     const line = yy => { g.fillStyle = '#EEF1EE'; g.fillRect(xL, yy, xX - xL, 2); };
     y = yTable + 14 + 56;
     d.table.forEach(r => {
       line(y);
-      text(r.name, xL, y + 38, `600 27px ${TXT}`, '#000', 'left', xS - 110 - xL);
+      text(r.name, xL, y + 38, `600 27px ${TXT}`, '#000', 'left', (withTeam ? xT - 130 : xS - 110) - xL);
+      if (withTeam && r.team) text(r.team, xT, y + 38, `700 27px ${TXT}`, '#000', 'right');
       text(r.sets, xS, y + 38, `400 27px ${TXT}`, MUTED, 'right');
       text(r.wins, xW, y + 38, `400 27px ${TXT}`, MUTED, 'right');
       text('+' + r.xp, xX, y + 38, `800 28px ${DISP}`, INK, 'right');
