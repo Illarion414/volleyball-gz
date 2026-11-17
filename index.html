@@ -884,7 +884,7 @@ function sendPanel(sd) {
     : `Отправлено <b>${sd.sent} из ${sd.total}</b>.` + (sd.changed ? ` После правок цифры поменялись у ${sd.changed}, им уйдёт исправление.` : '');
   return `<p class="sub-h">Рассылка игрокам</p>
     <div class="panel pad"><p class="sendnote">${note}</p>
-    ${sd.nobot.length ? `<p class="nobot">Нет в боте, напиши сам: ${sd.nobot.map(esc).join(', ')}</p>` : ''}
+    ${sd.nobot.length ? `<p class="nobot">Нет в Telegram: ${sd.nobot.map(esc).join(', ')}. Их итоги бот пришлёт тебе готовым сообщением, перешли в WeChat.</p>` : ''}
     <button class="btn ${sd.todo ? 'go' : ''} ${S.armed === 'resSend' ? 'armed' : ''}" data-a="resSend" ${sd.todo && !S.resBusy ? '' : 'disabled'}>${sendLabel(sd)}</button></div>`;
 }
 
@@ -903,7 +903,7 @@ async function sendResults() {
     const r = await api('api_resultsSend', S.date);
     S.sum = r;
     const f = r.result.failed.length;
-    toast(`Отправлено: ${r.result.sent}` + (f ? `. Не дошло: ${f}` : ' 🙌'));
+    toast(`Отправлено: ${r.result.sent}` + (r.result.fwd ? `. Тебе для WeChat: ${r.result.fwd}` : '') + (f ? `. Не дошло: ${f}` : ' 🙌'));
   } catch (e) { toast('Не отправилось: ' + msg(e).replace(/^.*ОШИБКА:\s*/, '')); }
   S.resBusy = false; render();
 }
