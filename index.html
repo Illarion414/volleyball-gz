@@ -153,6 +153,7 @@
   .pb { flex: 1; border: 0; border-radius: 12px; background: var(--white); padding: 12px 6px; font: 600 15px/1 var(--display); }
   .pb.on { box-shadow: inset 0 0 0 2px var(--black); }
   .sub-h { font-size: 14px; font-weight: 600; margin: 22px 0 8px; }
+  .sub-h.nx { margin-top: 4px; }
 
   /* ---------- журнал ---------- */
   .lrow { padding: 12px 0; border-bottom: 1px solid var(--line); }
@@ -1246,7 +1247,7 @@ async function loadCal() {
     const d = await api('api_calendar');
     const map = {};
     d.days.forEach(x => { map[x.date] = x; });
-    S.calData = { days: d.days, map };
+    S.calData = { days: d.days, map, next: d.next || null };
     S.today = S.today || d.today;
     if (S.calWant) {   // пришли с плиток «Мои итоги»: последняя игра, где ты был
       const past = d.days.filter(x => x.date <= d.today && x.type === 'игра' && !x.open);
@@ -1270,15 +1271,15 @@ async function loadDay(date) {
 }
 
 const wdName = d => new Date(d + 'T12:00:00').toLocaleDateString('ru-RU', { weekday: 'long' }).replace(/^./, c => c.toUpperCase());
-const typeChip = t => `<span class="chip ${t === 'игра' ? 'game' : 'train'}">${t === 'игра' ? 'игра' : 'тренировка'}</span>`;
+const typeChip = (t, n) => `<span class="chip ${t === 'игра' ? 'game' : 'train'}">${t === 'игра' ? 'игра' : 'тренировка'}${n ? ' №' + n : ''}</span>`;
 
 function viewHome() {
   if (!S.calData) loadCal();
   const recent = S.calData && S.calData.days ? S.calData.days.filter(d => d.date <= S.today).slice(-5).reverse() : [];
   const rows = recent.map(d => `<button class="drow" data-a="openDay" data-d="${d.date}">
-      <span class="dd"><b>${esc(dateTitle(d.date))}</b><small>${esc(wdName(d.date))}</small></span>${typeChip(d.type)}
+      <span class="dd"><b>${esc(dateTitle(d.date))}</b><small>${esc(wdName(d.date))}</small></span>${typeChip(d.type, d.num)}
       <span class="cnt">${d.n} чел.${d.sets ? `<br>${d.sets} ${plural(d.sets, 'сет', 'сета', 'сетов')}` : ''}</span></button>`).join('');
-  return { html: `
+  return { html: `${nextBlock()}
     <h2>Что записываем?</h2>
     <p class="lead">Выбери, что было, потом день в календаре.</p>
     <div class="bigs">
@@ -1293,6 +1294,18 @@ function viewHome() {
     <div class="panel">${!S.calData ? '<div class="empty">Загружаю…</div>' : S.calData.err ? `<div class="warn">${esc(S.calData.err)}</div>`
       : rows || '<div class="empty">Пока ничего не записано</div>'}</div>
     ${bdayBlock()}` };
+}
+
+/* Следующая игра и тренировка с номерами, чтобы не держать счёт в голове. Номер ставит сервер по записанным дням. */
+function nextBlock() {
+  const nx = S.calData && S.calData.next;
+  if (!nx || !nx.game || !S.today) return '';
+  const left = d => { const n = Math.round((new Date(d + 'T12:00:00') - new Date(S.today + 'T12:00:00')) / 864e5);
+    return n <= 0 ? 'сегодня' : n === 1 ? 'завтра' : `через ${n} ${plural(n, 'день', 'дня', 'дней')}`; };
+  const row = (t, x, name) => `<div class="drow"><span class="dd"><b>${name} №${x.n}</b><small>${esc(wdName(x.date))}, ${esc(dateTitle(x.date))}</small></span>
+      <span class="chip ${t}">${left(x.date)}</span></div>`;
+  return `<p class="sub-h nx">Следующие сборы</p>
+    <div class="panel">${row('game', nx.game, 'Игра')}${row('train', nx.train, 'Тренировка')}</div>`;
 }
 
 /* Сколько дней до ближайшего дня рождения. 29 февраля в невисокосный год считаем 28-м, как на сервере. */
@@ -1367,7 +1380,7 @@ function viewDayInfo(date) {
     ${info.pay ? `<div class="me ${info.pay.paid === info.pay.total ? 'ok' : ''}"><b>Оплатили ${info.pay.paid} из ${info.pay.total}</b></div>` : ''}
     ${info.people && info.people.length ? `<div class="people">${info.people.map(n => `<span>${esc(n)}</span>`).join('')}</div>` : ''}
     <button class="btn inline" data-a="openDay" data-d="${date}">${info.open ? 'Открыть, игра идёт' : 'Открыть день'}</button>` : '';
-  return `<div class="panel pad dinfo">${head(typeChip(info.type))}
+  return `<div class="panel pad dinfo">${head(typeChip(info.type, S.calData.map[date] && S.calData.map[date].num))}
     <div class="dmeta">${info.n} ${plural(info.n, 'человек', 'человека', 'человек')}${game ? ` · ${info.sets.length} ${plural(info.sets.length, 'сет', 'сета', 'сетов')}` : ''}</div>
     ${me}${sets ? `<div class="sets ${player ? 'pl' : ''}">${sets}</div>` : ''}${admin}</div>`;
 }
