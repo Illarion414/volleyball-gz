@@ -1161,6 +1161,1862 @@ function viewCard(p, adminMode) {
     ${f('f_first', 'Имя', p.firstName)}
     ${f('f_mid', 'Отчество', p.middleName)}
     ${f('f_dob', 'Дата рождения', p.dob, 'type="date"')}
+    ${adminMode ? `<label class="f">Пол, для поздравлений с днём рождения
+      <select id="f_sex"><option value="">${p.sexGuess ? `Определить сам (сейчас ${p.sexGuess === 'Ж' ? 'женский' : 'мужской'})` : 'Не указан, определить сам'}</option>
+      <option value="М" ${p.sex === 'М' ? 'selected' : ''}>Мужской</option><option value="Ж" ${p.sex === 'Ж' ? 'selected' : ''}>Женский</option></select></label>` : ''}
+    ${f('f_tg', 'Ник в Telegram', p.tg ? '@' + p.tg : '', 'placeholder="@username" autocapitalize="off"')}
+    ${f('f_wx', 'Ник в WeChat', p.wx, 'autocapitalize="off"')}
+    <label class="f">Позиция на площадке, если знаешь
+      <select id="f_pos"><option value="">Не знаю или любая</option>${POSITIONS.map(x => `<option ${p.pos === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
+    <label class="cons"><input type="checkbox" id="f_cons" ${p.consent ? 'checked' : ''}>
+      <span>Согласен(на), что мои данные хранятся у организатора, а фото и статистика показываются в группе</span></label>
+  </div>`;
+}
+
+function viewMyCard() {
+  return { html: viewCard(S.me || {}, false), action: `<button class="btn go" data-a="saveMyCard">Сохранить карточку</button>` };
+}
+
+function readCard() {
+  const v = id => ($('#' + id).value || '').replace(/\s+/g, ' ').trim();
+  const c = {
+    lastName: v('f_last'), firstName: v('f_first'), middleName: v('f_mid'), dob: $('#f_dob').value || '',
+    tg: v('f_tg').replace(/^@/, ''), wx: v('f_wx'), pos: $('#f_pos').value, consent: $('#f_cons').checked
+  };
+  if ($('#f_sex')) c.sex = $('#f_sex').value;   // пол ставит только админ
+  return c;
+}
+
+function saveCard() {
+  const card = readCard();
+  if (!card.lastName || !card.firstName) { toast('Заполни фамилию и имя'); return; }
+  const same = S.players.find(p => p.id !== S.edit.id &&
+    p.lastName.toLowerCase() === card.lastName.toLowerCase() && p.firstName.toLowerCase() === card.firstName.toLowerCase() &&
+    (p.middleName || '').toLowerCase() === card.middleName.toLowerCase() && (p.dob || '') === card.dob);
+  if (same) { toast('Такой игрок уже есть. Добавь отчество или дату рождения, чтобы различать'); return; }
+  if (S.edit.photoNew) card.photo = S.edit.photoNew;   // фото уходит на сервер, только если его выбрали заново
+  if (S.edit.id) {
+    const p = S.players.find(x => x.id === S.edit.id);
+    Object.assign(p, playerFrom(Object.assign({}, p, card)));
+    enqueue({ kind: 'pupd', payload: Object.assign({ id: p.id }, card) });
+    toast('Карточка сохранена');
+  } else {
+    const id = 'P' + Date.now().toString(36);
+    S.players.push(playerFrom(Object.assign({ id }, card)));
+    S.present.add(id);
+    enqueue({ kind: 'player', payload: Object.assign({ id }, card) });
+    scheduleSave();
+    toast(`Добавлен и отмечен: ${card.lastName} ${card.firstName}`);
+  }
+  S.edit = null; S.q = ''; render(); window.scrollTo(0, 0);
+}
+
+async function saveMyCard() {
+  const card = readCard();
+  if (!card.lastName || !card.firstName) { toast('Заполни фамилию и имя'); return; }
+  if (!card.consent) { toast('Отметь согласие, без него мы не сможем показывать тебя в рейтинге'); return; }
+  card.photo = (S.me && S.me.photoNew) || '';
+  const btn = document.querySelector('[data-a="saveMyCard"]');
+  btn.disabled = true; btn.textContent = 'Сохраняю…';
+  try {
+    S.me = await api('api_saveMyCard', card);
+    toast('Карточка сохранена. До встречи на площадке!');
+    if (S.role === 'player') { S.tab = 'me'; S.stats = null; }
+    else {   // админ: остаёмся во вкладке «Я» и обновляем себя в списке игроков
+      S.self.edit = false; S.self.stats = null; S.stats = null;
+      const p = S.players.find(x => x.id === S.me.id);
+      if (p) Object.assign(p, playerFrom(Object.assign({}, p, S.me)));
+      else S.players.push(playerFrom(S.me));
+    }
+  } catch (e) { toast('Не сохранилось: ' + msg(e).replace(/^.*ОШИБКА:\s*/, '')); }
+  render();
+}
+
+/* ---------- главная и календарь ---------- */
+function openDay(date, type) {
+  S.bill = null; S.edit = null; S.q = ''; S.tab = 'att'; S.openType = type || null;
+  load(date); window.scrollTo(0, 0);
+}
+
+let calBusy = false;
+async function loadCal() {
+  if (calBusy) return;
+  calBusy = true;
+  try {
+    const d = await api('api_calendar');
+    const map = {};
+    d.days.forEach(x => { map[x.date] = x; });
+    S.calData = { days: d.days, map };
+    S.today = S.today || d.today;
+    if (S.calWant) {   // пришли с плиток «Мои итоги»: последняя игра, где ты был
+      const past = d.days.filter(x => x.date <= d.today && x.type === 'игра' && !x.open);
+      const pick = (past.filter(x => x.me).pop() || past.pop());
+      if (pick) S.calSel = pick.date;
+      S.calWant = false;
+    }
+    if (!S.calSel) { const past = d.days.filter(x => x.date <= d.today); S.calSel = past.length ? past[past.length - 1].date : d.today; }
+    if (!S.calM) { const t = new Date(S.calSel + 'T12:00:00'); S.calM = { y: t.getFullYear(), m: t.getMonth() }; }
+  } catch (e) { S.calData = { err: msg(e).replace(/^.*ОШИБКА:\s*/, '') }; }
+  calBusy = false;
+  if (S.tab === 'cal' || S.tab === 'home') render();
+}
+
+const dayCache = {};
+async function loadDay(date) {
+  if (dayCache[date]) return;
+  dayCache[date] = 'loading';
+  try { dayCache[date] = await api('api_day', date); } catch (e) { dayCache[date] = { error: msg(e).replace(/^.*ОШИБКА:\s*/, '') }; }
+  if (S.tab === 'cal') render();
+}
+
+const wdName = d => new Date(d + 'T12:00:00').toLocaleDateString('ru-RU', { weekday: 'long' }).replace(/^./, c => c.toUpperCase());
+const typeChip = t => `<span class="chip ${t === 'игра' ? 'game' : 'train'}">${t === 'игра' ? 'игра' : 'тренировка'}</span>`;
+
+function viewHome() {
+  if (!S.calData) loadCal();
+  const recent = S.calData && S.calData.days ? S.calData.days.filter(d => d.date <= S.today).slice(-5).reverse() : [];
+  const rows = recent.map(d => `<button class="drow" data-a="openDay" data-d="${d.date}">
+      <span class="dd"><b>${esc(dateTitle(d.date))}</b><small>${esc(wdName(d.date))}</small></span>${typeChip(d.type)}
+      <span class="cnt">${d.n} чел.${d.sets ? `<br>${d.sets} ${plural(d.sets, 'сет', 'сета', 'сетов')}` : ''}</span></button>`).join('');
+  return { html: `
+    <h2>Что записываем?</h2>
+    <p class="lead">Выбери, что было, потом день в календаре.</p>
+    <div class="bigs">
+      <button class="big game" data-a="start" data-t="игра"><svg viewBox="0 0 24 24">${ICONS.set}</svg>
+        <b>Записать игру</b><span>Пришедшие, команды и сеты</span></button>
+      <button class="big train" data-a="start" data-t="тренировка"><svg viewBox="0 0 24 24">${ICONS.att}</svg>
+        <b>Записать тренировку</b><span>Пришедшие и счёт за зал</span></button>
+      <button class="big bal" data-a="bal"><svg viewBox="0 0 24 24">${ICONS.bal}</svg>
+        <b>Баланс игр</b><span>Пополнения, брони на субботу, остатки</span></button>
+    </div>
+    <p class="sub-h">Последние дни</p>
+    <div class="panel">${!S.calData ? '<div class="empty">Загружаю…</div>' : S.calData.err ? `<div class="warn">${esc(S.calData.err)}</div>`
+      : rows || '<div class="empty">Пока ничего не записано</div>'}</div>
+    ${bdayBlock()}` };
+}
+
+/* Сколько дней до ближайшего дня рождения. 29 февраля в невисокосный год считаем 28-м, как на сервере. */
+function daysToBday(dob, today) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dob || '') || !today) return 999;
+  const md = dob.slice(5), t = new Date(today + 'T12:00:00');
+  for (let i = 0; i <= 366; i++) {
+    const d = new Date(t.getTime() + i * 864e5), y = d.getFullYear();
+    const x = String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+    if (x === md || (md === '02-29' && x === '02-28' && !leap)) return i;
+  }
+  return 999;
+}
+
+function bdayBlock() {
+  const ps = S.players || [];
+  if (!ps.length || !S.today) return '';
+  const near = ps.map(p => ({ p, n: daysToBday(p.dob, S.today) })).filter(x => x.n <= 30).sort((a, b) => a.n - b.n).slice(0, 5);
+  const when = n => n === 0 ? 'сегодня' : n === 1 ? 'завтра' : `через ${n} ${plural(n, 'день', 'дня', 'дней')}`;
+  const dm = n => new Date(new Date(S.today + 'T12:00:00').getTime() + n * 864e5).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+  const rows = near.map(({ p, n }) => `<button class="drow" data-a="edit" data-id="${esc(p.id)}">
+      <span class="dd"><b>${esc(p.name)}</b><small>${esc(dm(n))}</small></span><span class="chip ${n <= 1 ? 'game' : ''}">${when(n)}</span></button>`).join('');
+  const noDob = ps.filter(p => !p.dob).length;
+  const unsure = ps.filter(p => p.dob && !p.sex && !p.sexGuess);
+  const check = unsure.map(p => `<button class="drow" data-a="edit" data-id="${esc(p.id)}">
+      <span class="dd"><b>${esc(p.name)}</b><small>имя не подсказывает пол, поставь в карточке</small></span><span class="chip">проверь пол</span></button>`).join('');
+  return `<p class="sub-h">Дни рождения</p>
+    <div class="panel">${rows || '<div class="empty">В ближайший месяц никого</div>'}${check}</div>
+    <p class="tilehint">Накануне около 12:00 бот пришлёт тебе напоминание и готовое поздравление${noDob ? `. Без даты рождения: ${noDob} ${plural(noDob, 'игрок', 'игрока', 'игроков')}` : ''}</p>`;
+}
+
+function viewCalendar() {
+  if (!S.calData) { loadCal(); return { html: '<h2>Календарь</h2><div class="empty">Загружаю…</div>' }; }
+  if (S.calData.err) return { html: `<h2>Календарь</h2><div class="panel pad"><div class="warn">${esc(S.calData.err)}</div></div>` };
+  const player = S.role === 'player', { y, m } = S.calM;
+  const grid = monthGrid(y, m, 'calSel', S.calSel, iso => { const d = S.calData.map[iso]; return d ? { type: d.type, hollow: player && !d.me } : null; });
+  return { html: `
+    <h2>Календарь</h2>
+    <div class="panel pad calp">
+      <div class="calh"><button class="arw" data-a="cmPrev" aria-label="Предыдущий месяц">‹</button><b>${monthTitle(y, m)}</b><button class="arw" data-a="cmNext" aria-label="Следующий месяц">›</button></div>
+      <div class="wk">${WEEK_HEAD}</div><div class="days">${grid}</div>
+      <div class="legend"><span><i></i>игра</span><span><i class="tr"></i>тренировка</span>${player ? '<span><i class="ring"></i>без тебя</span>' : ''}<span><i class="today"></i>сегодня</span></div>
+    </div>
+    ${viewDayInfo(S.calSel)}` };
+}
+
+function viewDayInfo(date) {
+  const head = extra => `<div class="dhead"><div><b>${esc(dateTitle(date))}</b><small>${esc(wdName(date))}</small></div>${extra || ''}</div>`;
+  if (!S.calData.map[date]) return `<div class="panel pad dinfo">${head()}<div class="dmeta">В этот день ничего не было</div></div>`;
+  const info = dayCache[date];
+  if (!info || info === 'loading') { loadDay(date); return `<div class="panel pad dinfo">${head(typeChip(S.calData.map[date].type))}<div class="dmeta">Загружаю…</div></div>`; }
+  if (info.error) return `<div class="panel pad dinfo">${head()}<div class="warn">${esc(info.error)}</div></div>`;
+  const player = S.role === 'player', game = info.type === 'игра';
+  if (player && info.open) return `<div class="panel pad dinfo">${head(typeChip('игра'))}
+    <div class="me ${info.me ? 'ok' : 'no'}"><b>${info.me ? 'Ты на игре ✅' : 'Игра идёт'}</b><span>Сеты, итоги и рейтинг появятся, когда игру завершат</span></div></div>`;
+  let me = '';
+  if (player) {
+    const mine = info.sets.filter(s => s.mine), w = mine.filter(s => s.mine === 'win').length;
+    if (!info.me) me = '<div class="me no">В этот день без тебя</div>';
+    else if (game && mine.length) me = `<div class="me ok"><b>Твои сеты: ${mine.length}</b><span>${w} ${plural(w, 'победа', 'победы', 'побед')} · ${mine.length - w} ${plural(mine.length - w, 'поражение', 'поражения', 'поражений')}</span></div>`;
+    else me = `<div class="me ok"><b>${game ? 'Ты был(а) на игре' : 'Ты был(а) на тренировке'} ✅</b></div>`;
+    if (info.myPay) {
+      const lbl = (PAY_LABEL[info.myPay.status] || ['', info.myPay.status]);
+      me += `<div class="me pay"><span>Оплата: <b>${info.myPay.amount} ¥</b></span><span class="chip ${lbl[0]}">${lbl[1] === 'ждём чек' ? 'ждём чек в боте' : lbl[1]}</span></div>`;
+    }
+  }
+  const sets = info.sets.map(s => `<div class="srow ${s.mine}"><span class="no">${s.num}</span>
+      <span class="res"><i class="t${s.t1} ${s.winner === s.t1 ? 'w' : ''}" style="--tc: var(--${s.t1})">${s.t1}</i> ${s.sc1}:${s.sc2} <i class="t${s.t2} ${s.winner === s.t2 ? 'w' : ''}" style="--tc: var(--${s.t2})">${s.t2}</i></span>
+      ${s.mine ? `<span class="chip ${s.mine === 'win' ? 'ok' : 'bad'}">${s.mine === 'win' ? 'победа' : 'поражение'}${s.side ? ', ты в ' + s.side : ''}</span>` : ''}</div>`).join('');
+  const admin = !player ? `
+    ${info.pay ? `<div class="me ${info.pay.paid === info.pay.total ? 'ok' : ''}"><b>Оплатили ${info.pay.paid} из ${info.pay.total}</b></div>` : ''}
+    ${info.people && info.people.length ? `<div class="people">${info.people.map(n => `<span>${esc(n)}</span>`).join('')}</div>` : ''}
+    <button class="btn inline" data-a="openDay" data-d="${date}">${info.open ? 'Открыть, игра идёт' : 'Открыть день'}</button>` : '';
+  return `<div class="panel pad dinfo">${head(typeChip(info.type))}
+    <div class="dmeta">${info.n} ${plural(info.n, 'человек', 'человека', 'человек')}${game ? ` · ${info.sets.length} ${plural(info.sets.length, 'сет', 'сета', 'сетов')}` : ''}</div>
+    ${me}${sets ? `<div class="sets ${player ? 'pl' : ''}">${sets}</div>` : ''}${admin}</div>`;
+}
+
+/* ---------- счёт за тренировку ---------- */
+// Сумма с человека: аренда / участников + доплата за инвентарь, вверх до целого юаня (как на сервере).
+function billCalc(rent, n, extra) {
+  const per = rent / n, amount = Math.ceil(Math.round((per + extra) * 100) / 100);
+  return { perRent: Math.round(per * 100) / 100, amount, total: amount * n, rounding: Math.round((amount * n - rent - extra * n) * 100) / 100 };
+}
+const yuan = x => String(Math.round(x * 100) / 100).replace('.', ',') + ' ¥';
+const billText = (date, phrase, amount) => `🏐 Спасибо за тренировку ${dateTitle(date)}!\n\n${phrase}\n\n💳 К оплате: ${amount} ¥ на Алипей по QR-коду выше.\nПосле оплаты пришли сюда скриншот чека 📸`;
+const PAY_LABEL = { 'ждём чек': ['wait', 'ждём чек'], 'чек получен': ['ok', 'чек получен'], 'оплачено': ['ok', 'оплачено вручную'],
+  'нет в боте': ['bad', 'нет в боте, напиши сам'], 'не доставлено': ['bad', 'не доставлено'] };
+
+// Перед расчётом убеждаемся, что отметки уже на сервере: он считает по сохранённому списку.
+async function syncNow() {
+  saveNow(); flush();
+  const t0 = Date.now();
+  while ((outbox.length || flushing) && Date.now() - t0 < 15000) await new Promise(r => setTimeout(r, 300));
+  if (outbox.length) throw new Error('Отметки ещё не сохранились, проверь связь');
+}
+
+async function openBill() {
+  S.bill = { date: S.date, rent: '', st: null, busy: true, err: '', armed: false };
+  render(); window.scrollTo(0, 0);
+  try {
+    await syncNow();
+    const st = await api('api_billPreview', S.date, 0);
+    S.bill.st = st;
+    S.bill.rent = st.sent ? String(st.rent) : (st.lastRent ? String(st.lastRent) : '');
+  } catch (e) { S.bill.err = msg(e).replace(/^.*ОШИБКА:\s*/, ''); }
+  S.bill.busy = false; render();
+}
+
+function billCalcNow() {
+  const b = S.bill, st = b.st, rent = Number(String(b.rent).replace(',', '.')) || 0;
+  if (st.sent) return st.calc;
+  return rent > 0 && st.n ? billCalc(rent, st.n, st.extra) : null;
+}
+
+function billCalcHtml() {
+  const st = S.bill.st, c = billCalcNow();
+  if (!c) return '<div class="hintc">Введи стоимость аренды, и я посчитаю сумму с каждого</div>';
+  return `<div class="crow"><span>Аренда на человека</span><b>${yuan(c.perRent)}</b></div>
+    <div class="crow"><span>Инвентарь</span><b>+ ${yuan(st.extra)}</b></div>
+    <div class="crow big"><span>К оплате с человека</span><b>${c.amount} ¥</b></div>
+    <div class="crow"><span>Всего соберём с ${st.n}</span><b>${yuan(c.total)}</b></div>
+    <div class="hintc">Аренда ${yuan(c.total - st.extra * st.n - c.rounding)} + инвентарь ${yuan(st.extra * st.n)} + округление ${yuan(c.rounding)}. Расчёт видишь только ты, игрокам придёт только сумма.</div>`;
+}
+
+function billSendLabel() {
+  const st = S.bill.st, bots = st.people.filter(p => p.bot && (!st.sent || !p.status)).length;
+  return S.bill.armed ? `Точно разослать ${bots}?` : (st.sent ? `Дослать новым (${bots})` : `Разослать счёт (${bots})`);
+}
+
+function billCanSend() {
+  const st = S.bill.st, c = billCalcNow();
+  const bots = st.people.filter(p => p.bot && (!st.sent || !p.status)).length;
+  return !!(c && st.qr && bots && !S.bill.busy);
+}
+
+function viewBill() {
+  const b = S.bill, st = b.st;
+  const back = `<button class="btn" data-a="billClose">Назад</button>`;
+  if (!st) return { action: back, html: `<h2>Счёт за тренировку</h2>${b.err ? `<div class="panel pad"><div class="warn">${esc(b.err)}</div></div>` : '<div class="empty">Считаю…</div>'}` };
+  const c = billCalcNow();
+  const paid = st.people.filter(p => p.status === 'чек получен' || p.status === 'оплачено');
+  const people = st.people.map(p => {
+    let chip;
+    if (p.status) chip = PAY_LABEL[p.status] || ['', p.status];
+    else chip = p.bot ? ['', st.sent ? 'новый, ещё не отправлено' : 'получит сообщение'] : ['bad', 'нет в боте, напиши сам'];
+    const tap = st.sent && p.status ? `data-a="billMark" data-id="${esc(p.id)}"` : '';
+    return `<button class="brow" ${tap} ${tap ? '' : 'disabled'}><span class="nm">${esc(p.name)}</span><span class="chip ${chip[0]}">${chip[1]}</span></button>`;
+  }).join('');
+  const sentHead = st.sent ? `<div class="panel pad paid"><b>Оплатили ${paid.length} из ${st.n}</b>
+      <span>Собрано ${paid.reduce((s, p) => s + p.amount, 0)} из ${yuan(st.calc.total)} · разослано ${esc(st.sent.at)}</span>
+      <span>Нажми на игрока, чтобы отметить оплату вручную (наличными или чек пришёл не в бот).</span></div>` : '';
+  const action = `${back}${st.sent ? `<button class="btn" data-a="billRefresh">Обновить</button>` : ''}
+    ${!st.sent || st.people.some(p => p.bot && !p.status) ? `<button class="btn go" data-a="billSend" ${billCanSend() ? '' : 'disabled'}>${billSendLabel()}</button>` : ''}`;
+  return { action, html: `
+    <h2>Счёт за тренировку</h2>
+    <p class="lead">${esc(dateTitle(st.date))}, ${st.n} ${plural(st.n, 'участник', 'участника', 'участников')} без тебя</p>
+    ${sentHead}
+    <div class="panel pad">
+      ${st.sent ? `<div class="crow"><span>Аренда зала</span><b>${yuan(st.rent)}</b></div>`
+        : `<label class="f">Аренда зала, ¥<input id="f_rent" type="number" inputmode="decimal" min="0" step="1" value="${esc(b.rent)}" placeholder="например, 300"></label>`}
+      <div id="calc">${billCalcHtml()}</div>
+    </div>
+    <div class="panel pad qrbox"><div class="qr" style="${st.qr ? `background-image:url('${esc(st.qr)}')` : ''}">${st.qr ? '' : 'QR'}</div>
+      <div><b>QR-код Алипея</b><small>${st.qr ? 'Уйдёт картинкой в каждом сообщении' : 'Загрузи скриншот своего QR для оплаты'}</small>
+      <label class="lnk">${st.qr ? 'Заменить' : 'Загрузить QR'}<input type="file" id="f_qr" accept="image/*"></label></div></div>
+    <p class="sub-h">Так увидят игроки</p>
+    <div class="msg"><div class="msgqr" style="${st.qr ? `background-image:url('${esc(st.qr)}')` : ''}"></div><div id="msgText">${esc(c ? billText(st.date, st.phrase, c.amount) : 'Сообщение появится, когда введёшь аренду')}</div></div>
+    <p class="sub-h">Участники</p>
+    <div class="panel">${people || '<div class="empty">Никто не отмечен</div>'}</div>` };
+}
+
+async function billSend() {
+  if (!S.bill.armed) { S.bill.armed = true; render(); setTimeout(() => { if (S.bill && S.bill.armed) { S.bill.armed = false; render(); } }, 4000); return; }
+  S.bill.armed = false; S.bill.busy = true; render();
+  try {
+    await syncNow();
+    const st = await api('api_billSend', S.bill.date, Number(String(S.bill.rent).replace(',', '.')) || 0);
+    S.bill.st = st;
+    toast(`Разослано: ${st.result.sent}` + (st.result.failed.length ? `. Не дошло: ${st.result.failed.join(', ')}` : ''));
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+  } catch (e) { toast('Не разослано: ' + msg(e).replace(/^.*ОШИБКА:\s*/, '')); }
+  S.bill.busy = false; render();
+}
+
+async function billCall(fn, ...args) {
+  S.bill.busy = true;
+  try { S.bill.st = await api(fn, ...args); } catch (e) { toast(msg(e).replace(/^.*ОШИБКА:\s*/, '')); }
+  S.bill.busy = false; render();
+}
+
+// QR не сжимаем сильно: до 1000 px на белом фоне, чтобы код уверенно сканировался.
+function readQr(file) {
+  const img = new Image(), fr = new FileReader();
+  fr.onload = () => { img.src = fr.result; };
+  img.onload = async () => {
+    const k = Math.min(1, 1000 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+    let data = c.toDataURL('image/png');
+    if (data.length > 2500000) data = c.toDataURL('image/jpeg', 0.92);
+    toast('Загружаю QR…');
+    try { const r = await api('api_setQr', data); S.bill.st.qr = r.qr; toast('QR сохранён'); }
+    catch (e) { toast('QR не сохранился: ' + msg(e).replace(/^.*ОШИБКА:\s*/, '')); }
+    render();
+  };
+  fr.readAsDataURL(file);
+}
+
+/* ---------- календарь ---------- */
+/** Сетка месяца. info(iso) → { type, hollow }: зелёный кружок игра, чёрный тренировка, контур «без тебя». */
+function monthGrid(y, m, action, sel, info) {
+  const first = new Date(y, m, 1), start = (first.getDay() + 6) % 7;
+  const total = Math.ceil((start + new Date(y, m + 1, 0).getDate()) / 7) * 7;
+  const cells = [];
+  for (let i = 0; i < total; i++) {
+    const d = new Date(y, m, 1 - start + i);
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const t = info(iso), kind = t ? (t.type === 'тренировка' ? 'k-tr' : 'k-g') + (t.hollow ? ' hollow' : '') : '';
+    cells.push(`<button class="day ${d.getMonth() !== m ? 'out' : ''} ${iso === S.today ? 'today' : ''} ${iso === sel ? 'sel' : ''} ${kind}" data-a="${action}" data-d="${iso}">
+      <span>${d.getDate()}</span></button>`);
+  }
+  return cells.join('');
+}
+const monthTitle = (y, m) => new Date(y, m, 1).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }).replace(' г.', '');
+const WEEK_HEAD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map(d => `<span class="${d === 'Сб' ? 'sat' : ''}">${d}</span>`).join('');
+
+function renderCal() {
+  const o = $('#overlay');
+  if (!S.cal) { setHTML(o, ''); return; }
+  const { y, m } = S.cal;
+  const title = monthTitle(y, m);
+  const pickType = S.cal.pickType;
+  const cells = [monthGrid(y, m, 'pick', pickType ? '' : S.date, iso => S.days[iso] ? { type: S.days[iso] } : null)];
+  setHTML(o, `<div class="scrim" data-a="calClose"></div>
+    <div class="sheet" role="dialog" aria-label="Выбор даты"><div class="grab"></div>
+      <div class="calh"><button class="arw" data-a="calPrev" aria-label="Предыдущий месяц">‹</button><b>${title}</b><button class="arw" data-a="calNext" aria-label="Следующий месяц">›</button></div>
+      ${pickType ? `<div class="picktitle">${pickType === 'игра' ? 'Игра' : 'Тренировка'}: выбери день</div>` : ''}
+      <div class="wk">${WEEK_HEAD}</div>
+      <div class="days">${cells.join('')}</div>
+      <div class="legend"><span><i></i>игра</span><span><i class="tr"></i>тренировка</span><span><i class="today"></i>сегодня</span></div>
+      <button class="btn go" data-a="pick" data-d="${S.today}">Сегодня</button></div>`);
+}
+
+let toastT = null;
+function toast(text) {
+  const el = $('#toast');
+  el.textContent = text; el.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+/* ---------- баланс игр ---------- */
+const BK_LABEL = { 'спросили': ['wait', 'ждём ответ'], 'подтвердил': ['ok', 'подтвердил'], 'отказался': ['', 'пропускает'],
+  'не хватает баланса': ['bad', 'нет баланса'], 'бронь снята': ['', 'бронь снята'] };
+const balErr = e => msg(e).replace(/^.*ОШИБКА:\s*/, '');
+const gamesWord = n => `${n} ${plural(n, 'игра', 'игры', 'игр')}`;
+
+async function openBal() {
+  S.bal = { st: null, busy: true, err: '', sel: '', armed: '', other: '', manual: false };
+  render(); window.scrollTo(0, 0);
+  try { S.bal.st = await api('api_balances'); } catch (e) { S.bal.err = balErr(e); }
+  if (S.bal) { S.bal.busy = false; render(); }
+}
+async function balCall(fn, ...args) {
+  if (!S.bal || S.bal.busy) return;
+  S.bal.busy = true; S.bal.armed = ''; render();
+  try { const st = await api(fn, ...args); if (S.bal) { S.bal.st = st; S.bal.cash = ''; S.bal.otherVal = ''; } if (st.note) toast(st.note); }
+  catch (e) { toast(balErr(e)); }
+  if (S.bal) { S.bal.busy = false; render(); }
+}
+// Денежные кнопки срабатывают со второго нажатия.
+function balArm(k, fn) {
+  if (S.bal.armed !== k) { S.bal.armed = k; render(); setTimeout(() => { if (S.bal && S.bal.armed === k) { S.bal.armed = ''; render(); } }, 4000); return; }
+  fn();
+}
+function opRow(o, withName) {
+  const title = o.type === 'игра' ? `Игра ${dateTitle(o.game)}` : o.type === 'возврат брони' ? `Возврат за ${dateTitle(o.game)}` : o.type === 'пополнение' ? 'Пополнение' : (o.note || 'Корректировка');
+  return `<div class="oprow"><span>${withName ? esc(o.name) + ' · ' : ''}${esc(title)}<small>${esc(o.at)}${o.note && o.type !== 'корректировка' ? ' · ' + esc(o.note) : ''}</small></span>
+    <b class="${o.amount > 0 ? 'plus' : ''}">${o.amount > 0 ? '+' : ''}${o.amount} ¥</b></div>`;
+}
+
+function viewBal() {
+  const b = S.bal, st = b.st, dis = b.busy ? 'disabled' : '';
+  const back = `<button class="btn" data-a="balClose">Назад</button>`;
+  if (!st) return { action: back, html: `<h2>Баланс игр</h2>${b.err ? `<div class="panel pad"><div class="warn">${esc(b.err)}</div></div>` : '<div class="empty">Загружаю…</div>'}` };
+  const arm = (k, on, off) => b.armed === k ? on : off, cls = k => b.armed === k ? ' armed' : '';
+  const g = st.game, gd = dateTitle(g.date);
+  const reqs = st.requests.map(r => `<div class="brow open"><span class="nm">${esc(r.name)}<small>${r.status === 'чек на проверке' ? 'чек пришёл тебе в бот, сверь сумму' : 'QR отправлен, чек ещё не прислал'}</small></span>
+      <span class="chip ${r.status === 'чек на проверке' ? 'wait' : ''}">${r.amount} ¥</span></div>
+    <div class="bacts"><button class="mini go${cls('ok' + r.rid)}" data-a="balOk" data-id="${esc(r.rid)}" ${dis}>${arm('ok' + r.rid, 'Точно зачислить?', `Зачислить ${r.amount} ¥`)}</button>
+      <button class="mini" data-a="balOther" data-id="${esc(r.rid)}" ${dis}>Другая сумма</button>
+      <button class="mini bad${cls('no' + r.rid)}" data-a="balNo" data-id="${esc(r.rid)}" ${dis}>${arm('no' + r.rid, 'Точно отклонить?', 'Отклонить')}</button>
+      ${b.other === r.rid ? `<input id="f_other" type="number" inputmode="numeric" min="1" placeholder="Сколько пришло, ¥" value="${esc(b.otherVal || '')}"><button class="mini go" data-a="balOtherOk" data-id="${esc(r.rid)}" ${dis}>Зачислить</button>` : ''}</div>`).join('');
+  const booked = {};
+  g.list.forEach(x => { booked[x.id] = x.status; });
+  const yes = g.list.filter(x => x.status === 'подтвердил'), noSeat = yes.filter(x => !x.seat).length;
+  const books = g.list.map(x => {
+    const l = BK_LABEL[x.status] || ['', x.status];
+    return `<div class="brow${x.status === 'подтвердил' ? ' open' : ''}"><span class="nm">${esc(x.name)}${x.seat ? '<small>место занято, игрок знает</small>' : ''}</span><span class="chip ${l[0]}">${l[1]}</span></div>
+      ${x.status === 'подтвердил' ? `<div class="bacts"><button class="mini bad${cls('off' + x.id)}" data-a="balOff" data-id="${esc(x.id)}" ${dis}>${arm('off' + x.id, `Снять и вернуть ${st.price} ¥?`, 'Снять бронь')}</button></div>` : ''}`;
+  }).join('');
+  const people = st.players.slice().sort((x, y) => (y.member - x.member) || x.name.localeCompare(y.name, 'ru')).map(p => {
+    const open = b.sel === p.id, canBook = p.balance >= st.price && booked[p.id] !== 'подтвердил';
+    return `<button class="brow${open ? ' open' : ''}" ${b.manual ? `data-a="balSel" data-id="${esc(p.id)}"` : 'disabled'}><span class="nm">${esc(p.name)}${p.bot ? '' : '<small class="miss">нет в боте</small>'}</span>
+        <span class="sum">${p.member ? p.balance + ' ¥' : 'без баланса'}${p.member ? `<small>${p.games ? 'на ' + gamesWord(p.games).replace('игра', 'игру') : 'на игру не хватает'}</small>` : ''}</span></button>
+      ${open ? `<div class="bacts">
+        <button class="mini${cls('qr' + p.id)}" data-a="balQr" data-id="${esc(p.id)}" ${p.bot ? dis : 'disabled'}>${arm('qr' + p.id, 'Отправить QR игроку?', `QR на пополнение, ${st.packSum} ¥`)}</button>
+        ${canBook ? `<button class="mini${cls('book' + p.id)}" data-a="balBook" data-id="${esc(p.id)}" ${dis}>${arm('book' + p.id, `Списать ${st.price} ¥ и записать?`, `Бронь на ${gd}`)}</button>` : ''}
+        <input id="f_cash" type="number" inputmode="numeric" min="1" placeholder="Сумма, ¥" value="${esc(b.cash || '')}">
+        <button class="mini go${b.armed.indexOf('balCash' + p.id) === 0 ? ' armed' : ''}" data-a="balCash" data-id="${esc(p.id)}" ${dis}>${b.armed.indexOf('balCash' + p.id) === 0 ? `Внести ${esc(b.cash)} ¥?` : 'Внести наличные'}</button>
+        <button class="mini bad${b.armed.indexOf('balRefund' + p.id) === 0 ? ' armed' : ''}" data-a="balRefund" data-id="${esc(p.id)}" ${dis}>${b.armed.indexOf('balRefund' + p.id) === 0 ? `Вернуть ${esc(b.cash)} ¥?` : 'Вернуть деньги'}</button></div>` : ''}`;
+  }).join('');
+  const checks = st.requests.filter(r => r.status === 'чек на проверке').length, silent = g.list.filter(x => x.status === 'спросили').length;
+  const todo = [];
+  if (checks) todo.push(`💳 <b>Проверь ${checks} ${plural(checks, 'чек', 'чека', 'чеков')}</b> и зачисли деньги. Они ниже, в «Пополнения ждут тебя».`);
+  if (noSeat) todo.push(`🏐 <b>Займи ${plural(noSeat, 'место', 'места', 'мест')} ${noSeat} ${plural(noSeat, 'игроку', 'игрокам', 'игрокам')}</b> на ${esc(gd)} в китайском приложении, потом нажми кнопку.
+    <button class="btn inline go${cls('seat')}" data-a="balSeat" ${dis}>${arm('seat', `Написать ${noSeat} ${plural(noSeat, 'игроку', 'игрокам', 'игрокам')} «место за тобой»?`, `Места занял, сообщить игрокам (${noSeat})`)}</button>`);
+  if (silent && !g.closed) todo.push(`⏳ Ждём ответ от ${silent} ${plural(silent, 'игрока', 'игроков', 'игроков')} до воскресенья ${g.closeHour}:00. Молчащим бот сам напомнит в воскресенье утром.`);
+  if (!todo.length) todo.push(`✅ Сейчас от тебя ничего не нужно. Опрос на следующую игру бот разошлёт сам в субботу в ${g.askHour}:00.`);
+  return { action: `${back}<button class="btn" data-a="balRefresh" ${dis}>Обновить</button>`, html: `
+    <h2>Баланс игр</h2>
+    <div class="balhero"><b>${st.total} ¥</b><span>предоплата игроков у тебя на руках · игра ${st.price} ¥, пакет ${gamesWord(st.pack).replace('игра', 'игру')} = ${st.packSum} ¥</span></div>
+    <p class="sub-h">Что сделать сейчас</p>
+    <div class="panel pad todo">${todo.map(x => `<div class="trow2">${x}</div>`).join('')}</div>
+    ${reqs ? `<p class="sub-h">Пополнения ждут тебя</p><div class="panel pad">${reqs}</div>` : ''}
+    <p class="sub-h">Брони на ${esc(gd)}</p>
+    <p class="lead">${g.closed ? 'Приём ответов закрыт, можно бронировать.' : `Бот спрашивает в субботу вечером, ответы до воскресенья ${g.closeHour}:00.`} Подтвердили: ${yes.length}</p>
+    <div class="panel pad">${books || '<div class="empty">Опрос на эту игру ещё не рассылался</div>'}</div>
+    <p class="sub-h">Балансы игроков</p>
+    <div class="panel pad">${people || '<div class="empty">Игроков пока нет</div>'}</div>
+    <button class="btn inline" data-a="balManual">${b.manual ? 'Скрыть ручные операции' : 'Ручные операции'}</button>
+    ${b.manual ? '<p class="lead" style="margin-top:10px">Для исключений: нажми на игрока выше. QR на пополнение, бронь по просьбе в WeChat, наличные, возврат денег.</p>' : ''}
+    <p class="sub-h">Последние операции</p>
+    <div class="panel pad">${st.ops.map(o => opRow(o, true)).join('') || '<div class="empty">Операций пока нет</div>'}</div>` };
+}
+
+/* Блок «Баланс игр» у игрока в «Моих итогах». */
+async function loadMyBal() {
+  S.myBal = { loading: true };
+  try { S.myBal = await api('api_myBalance'); } catch (e) { S.myBal = { err: balErr(e) }; }
+  render();
+}
+async function myTopup() {
+  if (S.myBal.busy) return;
+  S.myBal.busy = true; render();
+  try { S.myBal = await api('api_topup'); toast('Отправил QR в чат с ботом. Оплати и пришли туда чек'); }
+  catch (e) { S.myBal.busy = false; toast(balErr(e)); }
+  render();
+}
+function myBalHtml() {
+  if (S.role !== 'player') return '';
+  if (!S.myBal) { loadMyBal(); }
+  const m = S.myBal, head = '<p class="sub-h">Баланс игр</p>';
+  if (m.loading) return `${head}<div class="panel pad">Загружаю…</div>`;
+  if (m.err) return `${head}<div class="panel pad"><div class="warn">${esc(m.err)}</div></div>`;
+  const bk = m.booking, bl = bk && {
+    'подтвердил': bk.seat ? `✅ Место на ${dateTitle(bk.date)} забронировано за тобой` : `✅ Бронь на ${dateTitle(bk.date)} подтверждена, Сергей занимает место`,
+    'спросили': `Бот ждёт твой ответ про игру ${dateTitle(bk.date)}. Ответь в чате с ботом`,
+    'не хватает баланса': `На игру ${dateTitle(bk.date)} не хватает баланса`,
+    'отказался': `Игру ${dateTitle(bk.date)} ты пропускаешь` }[bk.status];
+  const req = m.request ? (m.request.status === 'чек на проверке' ? `Чек на ${m.request.amount} ¥ на проверке у Сергея` : `Ждём чек на ${m.request.amount} ¥. Пришли скриншот в чат с ботом`) : '';
+  const intro = m.member ? '' : `<p class="lead">Не успеваешь занять место в китайском приложении? Пополни баланс на ${gamesWord(m.pack).replace('игра', 'игру')}, и Сергей будет бронировать место за тебя. Каждую субботу вечером бот спросит, идёшь ли ты на следующую игру.</p>`;
+  return `${head}${intro}
+    <div class="balhero"><b>${m.balance} ¥</b><span>${m.games ? 'хватит на ' + gamesWord(m.games).replace('игра', 'игру') : 'на игру не хватает'} · игра ${m.price} ¥</span></div>
+    ${bl ? `<div class="panel pad">${esc(bl)}</div>` : ''}${req ? `<div class="panel pad">${esc(req)}</div>` : ''}
+    ${m.request && m.request.status === 'чек на проверке' ? '' : `<button class="btn go" data-a="myTop" ${m.busy ? 'disabled' : ''}>${m.request ? 'Прислать QR ещё раз' : `Пополнить на ${gamesWord(m.pack).replace('игра', 'игру')}, ${m.packSum} ¥`}</button>`}
+    ${m.ops.length ? `<button class="btn inline" data-a="myOps">${m.open ? 'Скрыть историю' : 'История операций'}</button>` : ''}
+    ${m.open ? `<div class="panel pad" style="margin-top:12px">${m.ops.map(o => opRow(o, false)).join('')}</div>` : ''}`;
+}
+
+/* ---------- события ---------- */
+// Суммы в «Балансе игр» запоминаем при вводе: экран перерисовывается, и поле иначе обнулялось бы.
+document.addEventListener('input', e => {
+  if (!S.bal) return;
+  if (e.target.id === 'f_cash') { S.bal.cash = e.target.value; S.bal.armed = ''; }
+  if (e.target.id === 'f_other') S.bal.otherVal = e.target.value;
+});
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-a],[data-tab],[data-type]');
+  if (!b || b.disabled) return;
+  if (b.dataset.tab) {
+    S.tab = b.dataset.tab; S.armed = null; S.edit = null; S.bill = null; S.bal = null; S.fromSet = false; S.setEdit = null;
+    if (S.tab === 'board' || S.tab === 'me') { S.stats = null; S.myBal = null; }
+    if (S.tab === 'self') { S.self.stats = null; S.self.edit = false; }
+    if (S.tab === 'cal' || S.tab === 'home') { S.calData = null; S.calSel = ''; S.calM = null; Object.keys(dayCache).forEach(k => delete dayCache[k]); }   // свежие данные, открываем на последнем дне
+    render(); window.scrollTo(0, 0); return;
+  }
+  if (b.dataset.type) {
+    if (S.type === b.dataset.type) return;
+    S.type = b.dataset.type;
+    if (S.type === 'тренировка' && (S.tab === 'teams' || S.tab === 'set')) S.tab = 'att';
+    scheduleSave(); render(); return;
+  }
+  const a = b.dataset.a, id = b.dataset.id, t = b.dataset.t;
+  switch (a) {
+    case 'reload': load(S.date); break;
+    case 'bal': openBal(); break;
+    case 'balClose': S.bal = null; render(); window.scrollTo(0, 0); break;
+    case 'balRefresh': balCall('api_balances'); break;
+    case 'balManual': S.bal.manual = !S.bal.manual; S.bal.sel = ''; render(); break;
+    case 'balSel': S.bal.sel = S.bal.sel === id ? '' : id; S.bal.armed = ''; S.bal.cash = ''; render(); break;
+    case 'balOk': balArm('ok' + id, () => balCall('api_topupDecide', id, true, null)); break;
+    case 'balOther': S.bal.other = S.bal.other === id ? '' : id; render(); break;
+    case 'balOtherOk': { const n = Math.round(Number(S.bal.otherVal || ($('#f_other') || {}).value)); if (!(n > 0)) { toast('Введи сумму'); break; } S.bal.other = ''; balCall('api_topupDecide', id, true, n); break; }
+    case 'balNo': balArm('no' + id, () => balCall('api_topupDecide', id, false, null)); break;
+    case 'balOff': balArm('off' + id, () => balCall('api_bookingSet', S.bal.st.game.date, id, false)); break;
+    case 'balBook': balArm('book' + id, () => balCall('api_bookingSet', S.bal.st.game.date, id, true)); break;
+    case 'balSeat': balArm('seat', () => balCall('api_bookingSeat', S.bal.st.game.date)); break;
+    case 'balQr': balArm('qr' + id, () => balCall('api_topupRequest', id)); break;
+    case 'balCash': case 'balRefund': {
+      const n = Math.round(Number(S.bal.cash || ($('#f_cash') || {}).value));
+      S.bal.cash = n > 0 ? String(n) : '';
+      if (!(n > 0)) { toast('Введи сумму'); break; }
+      balArm(a + id + n, () => balCall('api_balanceAdjust', id, a === 'balCash' ? n : -n, a === 'balCash' ? 'внесено наличными' : 'возврат денег'));
+      break;
+    }
+    case 'myTop': myTopup(); break;
+    case 'myOps': S.myBal.open = !S.myBal.open; render(); break;
+    case 'cal': { const d = new Date((S.date || S.today) + 'T12:00:00'); S.cal = { y: d.getFullYear(), m: d.getMonth() }; renderCal(); break; }
+    case 'calClose': S.cal = null; renderCal(); break;
+    case 'calPrev': S.cal.m--; if (S.cal.m < 0) { S.cal.m = 11; S.cal.y--; } renderCal(); break;
+    case 'calNext': S.cal.m++; if (S.cal.m > 11) { S.cal.m = 0; S.cal.y++; } renderCal(); break;
+    case 'pick': { const t = S.cal && S.cal.pickType; S.cal = null; renderCal(); if (t || b.dataset.d !== S.date) openDay(b.dataset.d, t); break; }
+    case 'start': { const d = new Date(S.today + 'T12:00:00'); S.cal = { y: d.getFullYear(), m: d.getMonth(), pickType: b.dataset.t }; renderCal(); break; }
+    case 'openDay': openDay(b.dataset.d, null); break;
+    case 'home': saveNow(); S.tab = 'home'; S.bill = null; S.bal = null; S.edit = null; S.calData = null; render(); window.scrollTo(0, 0); break;
+    case 'calSel': S.calSel = b.dataset.d; render(); break;
+    case 'cmPrev': S.calM.m--; if (S.calM.m < 0) { S.calM.m = 11; S.calM.y--; } render(); break;
+    case 'cmNext': S.calM.m++; if (S.calM.m > 11) { S.calM.m = 0; S.calM.y++; } render(); break;
+    case 'toggle':
+      if (S.present.has(id)) { S.present.delete(id); delete S.team[id]; } else S.present.add(id);
+      scheduleSave(); render(); break;
+    case 'new': S.edit = { lastName: S.q.trim() ? S.q.trim().replace(/^./, c => c.toUpperCase()) : '' }; render(); window.scrollTo(0, 0); break;
+    case 'edit': S.edit = Object.assign({}, S.players.find(p => p.id === id)); render(); window.scrollTo(0, 0); break;
+    case 'cancelEdit': S.edit = null; render(); break;
+    case 'saveCard': saveCard(); break;
+    case 'saveMyCard': saveMyCard(); break;
+    case 'bill': openBill(); break;
+    case 'billClose': S.bill = null; render(); window.scrollTo(0, 0); break;
+    case 'billSend': billSend(); break;
+    case 'billRefresh': billCall('api_billPreview', S.bill.date, 0); break;
+    case 'billMark': billCall('api_billMark', S.bill.date, id); break;
+    case 'selfEdit': S.self.edit = true; render(); window.scrollTo(0, 0); break;
+    case 'selfCancel': S.self.edit = false; if (S.me) delete S.me.photoNew; render(); window.scrollTo(0, 0); break;
+    case 'toTeams': S.tab = 'teams'; render(); window.scrollTo(0, 0); break;
+    case 'toSet': {
+      S.fromSet = false; S.tab = 'set';
+      const short = shortTeams(S.pair || TEAMS);
+      if (short.length) toast('Неполный состав: ' + short.map(t => `${t} ${teamFill(t).tot} из ${S.teamSize}`).join(', '));
+      render(); window.scrollTo(0, 0); break;
+    }
+    case 'toTeamsSet': S.fromSet = true; S.tab = 'teams'; render(); window.scrollTo(0, 0); break;
+    case 'finish':
+      if (S.armed !== 'finish') { S.armed = 'finish'; render(); setTimeout(() => { if (S.armed === 'finish') { S.armed = null; render(); } }, 4000); break; }
+      S.armed = null; saveNow();
+      enqueue({ kind: 'fin', date: S.date });
+      S.done = true; S.sum = null; S.tab = 'sum';
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+      toast('Игра завершена. Игроки увидят итоги и рейтинг');
+      render(); window.scrollTo(0, 0); break;
+    case 'sumRetry': S.sum = null; render(); break;
+    case 'resSend':
+      if (S.armed !== 'resSend') { S.armed = 'resSend'; render(); setTimeout(() => { if (S.armed === 'resSend') { S.armed = null; render(); } }, 4000); break; }
+      sendResults(); break;
+    case 'resCard': sendCard(); break;
+    case 'fix': S.armed = S.armed === 'fix' ? null : 'fix'; render(); break;
+    case 'fixCancel': S.armed = null; render(); break;
+    case 'fixAtt': S.armed = null; S.fix = 'att'; S.tab = 'att'; render(); window.scrollTo(0, 0); break;
+    case 'fixSets': S.armed = null; S.fix = 'sets'; S.tab = 'log'; render(); window.scrollTo(0, 0); break;
+    case 'fixDone':
+      saveNow(); S.fix = null; S.setEdit = null; S.sum = null; S.stats = null; S.tab = 'sum';
+      toast('Сохранено, итоги пересчитаются'); render(); window.scrollTo(0, 0); break;
+    case 'editSet': {
+      const s0 = S.sets.find(x => x.id === id);
+      if (s0) S.setEdit = JSON.parse(JSON.stringify(s0));
+      S.armed = null; render(); window.scrollTo(0, 0); break;
+    }
+    case 'eCancel': S.setEdit = null; S.armed = null; render(); break;
+    case 'eSave': saveSetEdit(); break;
+    case 'eg-': case 'eg+': { const k = b.dataset.k; S.setEdit[k] = Math.max(0, Math.min(12, S.setEdit[k] + (a === 'eg+' ? 1 : -1))); render(); break; }
+    case 'emove': {
+      const e2 = S.setEdit;
+      e2.sc1 = Number($('#e_sc1').value); e2.sc2 = Number($('#e_sc2').value);   // не теряем введённый счёт
+      e2.r1 = e2.r1.filter(x => x !== id); e2.r2 = e2.r2.filter(x => x !== id);
+      if (t === e2.t1) e2.r1.push(id); else if (t === e2.t2) e2.r2.push(id);
+      render(); break;
+    }
+    case 'edel':
+      if (S.armed !== 'edel') { S.armed = 'edel'; render(); break; }
+      S.armed = null;
+      S.sets = S.sets.filter(s => s.id !== S.setEdit.id);
+      enqueue({ kind: 'del', id: S.setEdit.id });
+      toast(`Сет №${S.setEdit.num} удалён`);
+      S.setEdit = null; S.sum = null; render(); break;
+    case 'help': S.help = !S.help; render(); break;
+    case 'toCal':
+      S.tab = 'cal'; S.calData = null; S.calSel = ''; S.calM = null; S.calWant = true;
+      Object.keys(dayCache).forEach(k => delete dayCache[k]);
+      render(); window.scrollTo(0, 0); break;
+    case 'team':
+      if (S.team[id] === t) delete S.team[id]; else S.team[id] = t;
+      scheduleSave(); render(); break;
+    case 'size-': S.size[t] = Math.max(roster(t).length, sizeOf(t) - 1); scheduleSave(); render(); break;   // убавляем только китайцев
+    case 'size+': S.size[t] = Math.min(12, Math.max(sizeOf(t), roster(t).length) + 1); scheduleSave(); render(); break;
+    case 'pair': S.pair = b.dataset.p.split(''); S.pick = { w: null, l: null, low: false }; scheduleSave(); render(); break;
+    case 'win': S.pick.w = t; render(); break;
+    case 'score': S.pick.l = Number(b.dataset.n); render(); break;
+    case 'low': S.pick.low = true; render(); break;
+    case 'l-': S.pick.l = Math.max(24, S.pick.l - 1); render(); break;
+    case 'l+': S.pick.l = S.pick.l + 1; render(); break;
+    case 'record': recordSet(); break;
+    case 'boardTab': S.board = b.dataset.k; render(); break;
+    case 'scope': S.scope = b.dataset.k; render(); break;
+    case 'del':
+      if (S.armed !== id) { S.armed = id; render(); setTimeout(() => { if (S.armed === id) { S.armed = null; render(); } }, 4000); break; }
+      S.armed = null;
+      S.sets = S.sets.filter(s => s.id !== id);
+      enqueue({ kind: 'del', id });
+      S.pair = nextPair() || S.pair;
+      scheduleSave(); toast('Сет удалён'); render(); break;
+  }
+});
+
+document.addEventListener('input', e => {
+  if (e.target.id === 'q') { S.q = e.target.value; setHTML($('#attList'), attList()); }
+  if ((e.target.id === 'e_sc1' || e.target.id === 'e_sc2') && S.setEdit) {
+    S.setEdit[e.target.id.slice(2)] = Number(e.target.value);
+    $('#ewin').textContent = winText(S.setEdit);
+  }
+  if (e.target.id === 'f_rent' && S.bill) {
+    S.bill.rent = e.target.value; S.bill.armed = false;
+    const c = billCalcNow(), st = S.bill.st;
+    setHTML($('#calc'), billCalcHtml());
+    $('#msgText').textContent = c ? billText(st.date, st.phrase, c.amount) : 'Сообщение появится, когда введёшь аренду';
+    const btn = document.querySelector('[data-a="billSend"]');
+    if (btn) { btn.disabled = !billCanSend(); btn.textContent = billSendLabel(); }
+  }
+});
+document.addEventListener('change', e => {
+  if (e.target.id === 'f_qr' && e.target.files[0]) { readQr(e.target.files[0]); return; }
+  if (e.target.id !== 'f_photo' || !e.target.files[0]) return;
+  const img = new Image(), fr = new FileReader();
+  fr.onload = () => { img.src = fr.result; };
+  img.onload = () => {     // уменьшаем до 400px, чтобы фото быстро грузилось и не занимало место
+    const k = Math.min(1, 400 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const data = c.toDataURL('image/jpeg', 0.82);
+    if (S.edit) S.edit.photoNew = data;                     // админ правит чью-то карточку
+    else S.me = Object.assign({}, S.me, { photoNew: data }); // своя карточка
+    const ava = $('#ava'); ava.style.backgroundImage = `url('${data}')`; ava.textContent = '';
+  };
+  fr.readAsDataURL(e.target.files[0]);
+});
+
+if (tg) { try { tg.ready(); tg.expand(); tg.setHeaderColor('#FFFFFF'); tg.setBackgroundColor('#F2F5F1'); } catch (e) {} }
+load('');
+</script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Волейбол Гуанчжоу</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Unbounded:wght@600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --white: #FFFFFF; --field: #F2F5F1; --line: #DCE3DD; --muted: #5B6760; --black: #000000;
+    --green: #00A04A; --green-ink: #007A38; --green-soft: #E3F4E9;
+    --red: #E21E26; --red-soft: #FCE6E7;
+    --A: var(--green); --B: var(--red); --C: var(--black);
+    --display: "Unbounded", "Arial Black", system-ui, sans-serif;
+    --text: "Golos Text", -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+    --tabbar: 64px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--field); color: var(--black); font: 400 16px/1.4 var(--text); }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+  /* ---------- шапка ---------- */
+  .stripe { height: 5px; background: linear-gradient(90deg, var(--green) 0 50%, var(--red) 50% 100%); }
+  header { position: sticky; top: 0; z-index: 6; background: var(--white); border-bottom: 1px solid var(--line); }
+  .hrow { display: flex; align-items: center; gap: 10px; padding: 10px 16px 8px; }
+  .datebtn { flex: 1; min-width: 0; text-align: left; border: 0; background: none; padding: 2px 0; }
+  .datebtn .d { display: block; font: 800 21px/1.15 var(--display); letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .datebtn:not([disabled]) .d::after { content: ""; display: inline-block; width: 8px; height: 8px; margin-left: 8px; vertical-align: 3px;
+    border-right: 2.5px solid var(--black); border-bottom: 2.5px solid var(--black); transform: rotate(45deg); }
+  .datebtn[disabled] { color: var(--black); cursor: default; }
+  .datebtn .s { display: block; font-size: 13px; color: var(--muted); margin-top: 2px; }
+  #status.ok { color: var(--green-ink); } #status.wait { color: #B26A00; } #status.bad { color: var(--red); font-weight: 600; }
+  .seg { display: inline-flex; background: var(--field); border-radius: 999px; padding: 3px; }
+  .seg[hidden] { display: none; }
+  .seg button { border: 0; background: none; border-radius: 999px; padding: 7px 12px; font-size: 14px; font-weight: 500; color: var(--muted); }
+  .seg button.on { background: var(--black); color: var(--white); }
+
+  main { padding: 14px 16px calc(var(--tabbar) + 96px + env(safe-area-inset-bottom)); max-width: 560px; margin: 0 auto; }
+  h2 { font: 800 22px/1.15 var(--display); margin: 6px 0 4px; letter-spacing: -.01em; }
+  .lead { color: var(--muted); font-size: 14px; margin: 0 0 14px; }
+  .panel { background: var(--white); border-radius: 18px; padding: 4px 14px; margin-bottom: 14px; }
+  .panel.pad { padding: 14px; }
+  .empty { text-align: center; color: var(--muted); padding: 28px 10px; }
+  .warn { color: var(--red); font-weight: 600; font-size: 14px; padding: 10px 0 2px; }
+
+  /* ---------- нижняя панель ---------- */
+  .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 7; background: var(--white); border-top: 1px solid var(--line);
+    display: flex; justify-content: space-around; padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
+  .tabbar button { flex: 1; border: 0; background: none; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    font-size: 11px; font-weight: 500; color: var(--muted); padding: 4px 0; }
+  .tabbar svg { width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .tabbar button.on { color: var(--green-ink); }
+  .tabbar button[hidden] { display: none; }
+  .action { position: fixed; left: 0; right: 0; bottom: calc(var(--tabbar) + env(safe-area-inset-bottom)); z-index: 5;
+    padding: 10px 16px; background: linear-gradient(to top, var(--field) 70%, rgba(242,245,241,0)); }
+  .action[hidden] { display: none; }
+  .action .inner { max-width: 528px; margin: 0 auto; display: flex; gap: 10px; }
+  .btn { flex: 1; display: block; width: 100%; border: 0; border-radius: 14px; padding: 15px 16px; font-size: 17px; font-weight: 600;
+    background: var(--white); color: var(--black); box-shadow: inset 0 0 0 1.5px var(--line); }
+  .btn.go { background: var(--green); color: var(--white); box-shadow: none; }
+  .btn[disabled] { background: #C9D2CB; color: var(--white); box-shadow: none; }
+  .btn.armed { background: var(--red); color: var(--white); box-shadow: none; }
+  .btn.inline { margin-top: 12px; }
+
+  /* ---------- списки игроков ---------- */
+  .search { width: 100%; border: 0; border-radius: 12px; background: var(--white); padding: 12px 14px; font: inherit; margin-bottom: 12px;
+    box-shadow: inset 0 0 0 1.5px var(--line); }
+  .prow { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+  .prow:last-child { border-bottom: 0; }
+  .ptog { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; border: 0; background: none; padding: 12px 0; text-align: left; }
+  .tick { flex: none; width: 28px; height: 28px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--line); display: grid; place-items: center; }
+  .prow.on .tick { background: var(--green); box-shadow: none; }
+  .prow.on .tick::after { content: ""; width: 10px; height: 5px; border-left: 2.5px solid #fff; border-bottom: 2.5px solid #fff; transform: rotate(-45deg) translate(1px, -1px); }
+  .nm { flex: 1; min-width: 0; font-weight: 500; }
+  .nm small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
+  .nm small.miss { color: var(--red); }
+  .cnt { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .pedit { border: 0; background: none; padding: 10px 2px 10px 12px; color: var(--muted); }
+  .pedit svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+
+  /* ---------- команды ---------- */
+  .teams3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+  .tcard { background: var(--white); border-radius: 16px; padding: 10px 10px 8px; border-top: 5px solid var(--tc); }
+  .tcard b { display: block; font: 800 22px/1 var(--display); color: var(--tc); }
+  .tcard .cmp { font-size: 13px; color: var(--muted); margin: 6px 0 8px; }
+  .tcard .ctl { display: flex; align-items: center; justify-content: space-between; }
+  .tcard .tot { font: 600 15px/1 var(--display); }
+  .tcard .tot.over { color: var(--red); }
+  .tcard .tl { font-size: 13px; color: var(--muted); margin: 6px 0 4px; }
+  .tcard .tl em { font-style: normal; font-weight: 700; color: var(--black); }
+  .tcard .gn { font: 700 17px/1 var(--display); font-style: normal; }
+  .tcard .tsum { margin-top: 8px; font-size: 12px; font-weight: 700; line-height: 1.25; color: var(--green-ink); }
+  .tcard .tsum.bad { color: var(--red); }
+  #tabbar[hidden] { display: none; }
+  .fixbar { background: #FFF4DC; color: #7A4B00; border-radius: 14px; padding: 10px 12px; font-size: 14px; margin-bottom: 12px; }
+  .btn.finish { background: var(--white); color: var(--black); box-shadow: inset 0 0 0 2px var(--black); margin-top: 26px; }
+  .btn.finish.armed { background: var(--red); color: var(--white); box-shadow: none; }
+  #action .btn.finish { margin-top: 0; }
+  .sumrow { display: flex; align-items: center; gap: 8px; padding: 11px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .sumrow:last-child { border-bottom: 0; }
+  .sumrow .nm { flex: 1; font-weight: 600; }
+  .sumrow .sv { color: var(--muted); min-width: 58px; text-align: right; }
+  .sumrow .xp { font: 700 15px/1 var(--display); color: var(--green-ink); min-width: 60px; text-align: right; }
+  .choice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+  .choice .btn { margin: 0; }
+  .board2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .scb { background: var(--white); border-radius: 16px; padding: 10px; border-top: 5px solid var(--tc); text-align: center; }
+  .scb .tn { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .scb input { width: 86px; font: 800 30px/1 var(--display); text-align: center; border: 0; background: var(--field); border-radius: 12px; padding: 8px 0; }
+  .gline { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 14px; }
+  .gline .gl { flex: 1; } .gline b { min-width: 18px; text-align: center; }
+  .tb.off.on { background: var(--muted); color: var(--white); }
+  .helpbox { font-size: 14px; line-height: 1.45; }
+  .lnk.help { display: inline-block; border: 0; background: none; padding: 0 0 10px; font-size: 14px; }
+  button.st { border: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+  .cardimg { display: block; width: 100%; border-radius: 12px; margin: 4px 0 12px; box-shadow: 0 1px 6px rgba(0,0,0,.12); }
+  .sendnote { font-size: 14px; color: var(--muted); margin: 0 0 10px; line-height: 1.4; }
+  .sendnote b { color: var(--black); }
+  .nobot { font-size: 13px; color: var(--red); margin: -2px 0 10px; }
+  .tilehint { font-size: 12px; color: var(--muted); text-align: center; margin: -6px 0 12px; }
+  .mini { width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--field); font-size: 18px; line-height: 1; }
+  .trow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .trow:last-child { border-bottom: 0; }
+  .trow .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tpick { display: flex; gap: 6px; }
+  .tb { width: 44px; height: 40px; border-radius: 12px; border: 0; background: var(--field); font: 800 16px/1 var(--display); color: var(--muted); }
+  .tb.on { background: var(--tc); color: var(--white); }
+  .tA { --tc: var(--A); } .tB { --tc: var(--B); } .tC { --tc: var(--C); }
+
+  /* ---------- табло ---------- */
+  .board { display: grid; grid-template-columns: 1fr 1fr; border-radius: 22px; overflow: hidden; margin-bottom: 14px; background: var(--white); }
+  .half { border: 0; padding: 14px 12px; text-align: left; background: var(--white); color: var(--black); position: relative; min-height: 196px;
+    display: flex; flex-direction: column; border-top: 8px solid var(--tc); }
+  .half + .half { border-left: 1px solid var(--line); }
+  .half .tn { font: 800 15px/1 var(--display); color: var(--tc); }
+  .half .sc { font: 800 76px/1 var(--display); letter-spacing: -.04em; margin: 12px 0 10px; color: #C9D2CB; }
+  .half .ros { font-size: 12.5px; color: var(--muted); line-height: 1.35; margin-top: auto; }
+  .half.win { background: var(--tc); color: var(--white); }
+  .half.win .tn, .half.win .sc, .half.win .ros { color: var(--white); }
+  .half.lose .sc { color: var(--black); }
+  .hint { font-size: 13px; color: var(--muted); margin: -4px 0 14px; text-align: center; }
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
+  .num { height: 48px; border-radius: 12px; border: 0; background: var(--white); font: 600 18px/1 var(--display); }
+  .num.on { background: var(--black); color: var(--white); }
+  .more { border: 0; background: none; color: var(--green-ink); font-weight: 600; padding: 12px 0 2px; }
+  .deuce { display: flex; align-items: center; gap: 12px; padding-top: 12px; font-size: 14px; }
+  .deuce b { font: 800 20px/1 var(--display); }
+  .pairs { display: flex; gap: 8px; }
+  .pb { flex: 1; border: 0; border-radius: 12px; background: var(--white); padding: 12px 6px; font: 600 15px/1 var(--display); }
+  .pb.on { box-shadow: inset 0 0 0 2px var(--black); }
+  .sub-h { font-size: 14px; font-weight: 600; margin: 22px 0 8px; }
+
+  /* ---------- журнал ---------- */
+  .lrow { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .lrow:last-child { border-bottom: 0; }
+  .lt { display: flex; align-items: center; gap: 10px; }
+  .lt .no { font-size: 12px; color: var(--muted); width: 28px; }
+  .lt .res { flex: 1; font: 600 17px/1 var(--display); }
+  .lt .res i { font-style: normal; color: var(--tc); }
+  .lt .res i.w { text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 4px; }
+  .lt .res small { font: 500 12px var(--text); color: #B26A00; }
+  .ls { font-size: 12px; color: var(--muted); margin: 4px 0 0 38px; }
+  .del { border: 0; background: var(--field); border-radius: 10px; padding: 7px 10px; font-size: 13px; }
+  .del.armed { background: var(--red); color: var(--white); }
+
+  /* ---------- рейтинг ---------- */
+  .tabs2 { display: flex; background: var(--white); border-radius: 999px; padding: 4px; margin-bottom: 14px; }
+  .tabs2 button { flex: 1 1 auto; border: 0; background: none; border-radius: 999px; padding: 9px 4px; font-weight: 600; font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .tabs2 button.on { background: var(--green); color: var(--white); }
+  .lb { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+  .lb:last-child { border-bottom: 0; }
+  .lb .pl { width: 30px; font: 800 16px/1 var(--display); color: var(--muted); text-align: center; }
+  .lb.top1 .pl { color: var(--green-ink); } .lb.top2 .pl, .lb.top3 .pl { color: var(--black); }
+  .lb .v { font: 800 17px/1 var(--display); }
+  .lb .v small { font: 500 12px/1 var(--text); color: var(--muted); margin-left: 4px; }
+  .lb.me { background: var(--green-soft); margin: 0 -14px; padding-left: 14px; padding-right: 14px; }
+  .note { font-size: 13px; color: var(--muted); padding: 0 2px 12px; }
+  .scope { display: flex; gap: 8px; margin: -4px 0 12px; }
+  .scope button { border: 0; background: none; padding: 6px 2px; margin-right: 10px; font-weight: 600; font-size: 14px; color: var(--muted);
+    border-bottom: 2.5px solid transparent; }
+  .scope button.on { color: var(--black); border-bottom-color: var(--black); }
+  .lb.cal .pl { font: 500 13px/1 var(--text); }
+
+  /* ---------- мои итоги ---------- */
+  .hero { background: var(--black); color: var(--white); border-radius: 22px; padding: 18px; margin-bottom: 14px; position: relative; overflow: hidden; }
+  .hero > * { position: relative; z-index: 1; }
+  .hero .lvl { font-size: 14px; color: #BFC9C2; }
+  .hero .xp { font: 800 54px/1 var(--display); margin: 8px 0 2px; }
+  .hero .xp small { font: 500 15px/1 var(--text); color: #BFC9C2; margin-left: 6px; }
+  .bar { height: 8px; background: #2B302D; border-radius: 4px; margin: 14px 0 6px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--green); border-radius: 4px; }
+  .hero .next { font-size: 13px; color: #BFC9C2; }
+  .stats3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+  .st { background: var(--white); border-radius: 16px; padding: 12px; }
+  .st.wide { grid-column: span 3; }
+  .st.w2 { grid-column: span 2; }
+  .st b { display: block; font: 800 24px/1 var(--display); margin-bottom: 4px; }
+  .st span { font-size: 12px; color: var(--muted); }
+
+  /* ---------- карточка ---------- */
+  label.f { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 0; }
+  label.f input, label.f select { display: block; width: 100%; margin-top: 5px; border: 0; border-radius: 12px; background: var(--field);
+    padding: 12px 14px; font: 500 16px/1.2 var(--text); color: var(--black); appearance: none; -webkit-appearance: none; }
+  .photo { display: flex; align-items: center; gap: 14px; margin: 4px 0 4px; }
+  .ava { width: 72px; height: 72px; border-radius: 50%; background: var(--field) center/cover; display: grid; place-items: center;
+    font: 800 22px/1 var(--display); color: var(--muted); flex: none; }
+  .photo label { color: var(--green-ink); font-weight: 600; cursor: pointer; }
+  .photo input { display: none; }
+  .photo b { font: 800 19px/1.2 var(--display); }
+  .cons { display: flex; gap: 12px; align-items: flex-start; margin: 16px 0 6px; font-size: 15px; }
+  .cons input { width: 22px; height: 22px; accent-color: var(--green); flex: none; margin-top: 1px; }
+
+  /* ---------- главная и календарь ---------- */
+  .back { width: 38px; height: 38px; flex: none; border: 0; border-radius: 50%; background: var(--field); display: grid; place-items: center; margin-right: -2px; }
+  .back[hidden] { display: none; }
+  .back svg { width: 22px; height: 22px; fill: none; stroke: var(--black); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+  .bigs { display: grid; gap: 12px; margin-bottom: 22px; }
+  .big { border: 0; border-radius: 22px; padding: 20px 18px; text-align: left; display: grid; grid-template-columns: 52px 1fr; column-gap: 14px; align-items: center; color: var(--white); }
+  .big svg { grid-row: span 2; width: 52px; height: 52px; padding: 12px; border-radius: 16px; background: rgba(255,255,255,.16); fill: none; stroke: currentColor; stroke-width: 2; }
+  .big b { font: 800 21px/1.15 var(--display); }
+  .big span { font-size: 14px; opacity: .85; }
+  .big.game { background: var(--green); }
+  .big.train { background: var(--black); }
+  .big.bal { background: var(--white); color: var(--black); box-shadow: inset 0 0 0 1.5px var(--line); }
+  .big.bal svg { background: var(--green-soft); color: var(--green-ink); }
+  .bacts { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 0 14px; border-bottom: 1px solid var(--line); }
+  .bacts:last-child { border-bottom: 0; }
+  .mini { flex: 0 0 auto; width: auto; min-height: 40px; white-space: nowrap; border: 0; border-radius: 11px; padding: 10px 13px; font-size: 14px; line-height: 1.2; font-weight: 600; background: var(--field); color: var(--black); }
+  .mini.go { background: var(--green); color: var(--white); }
+  .mini.bad { background: var(--red-soft); color: var(--red); }
+  .mini.armed { background: var(--red); color: var(--white); }
+  .mini[disabled] { opacity: .45; }
+  .bacts input { flex: 1 1 100%; min-width: 0; border: 0; border-radius: 11px; background: var(--field); padding: 10px 12px; font-size: 15px; }
+  .brow.open { border-bottom: 0; }
+  .brow .sum { font-weight: 700; white-space: nowrap; }
+  .brow .sum small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); text-align: right; }
+  .oprow { display: flex; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .oprow:last-child { border-bottom: 0; }
+  .oprow span { flex: 1; min-width: 0; }
+  .oprow small { display: block; color: var(--muted); font-size: 12px; }
+  .oprow b.plus { color: var(--green-ink); }
+  .balhero { background: var(--green-soft); border-radius: 18px; padding: 16px 18px; margin-bottom: 12px; }
+  .balhero b { display: block; font: 800 30px/1.1 var(--display); color: var(--green-ink); }
+  .balhero span { font-size: 14px; }
+  .trow2 { padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 15px; line-height: 1.4; }
+  .trow2:last-child { border-bottom: 0; }
+  .brow[disabled] { color: inherit; opacity: 1; cursor: default; }
+  .big:active { transform: scale(.98); }
+  .picktitle { font: 700 15px/1.2 var(--display); color: var(--green-ink); margin: -2px 0 10px; text-align: center; }
+  .drow { display: flex; width: 100%; align-items: center; gap: 10px; border: 0; background: none; padding: 12px 0; border-bottom: 1px solid var(--line); text-align: left; }
+  .drow:last-child { border-bottom: 0; }
+  .drow .dd { flex: 1; }
+  .drow .dd b { display: block; font: 700 16px/1.2 var(--display); }
+  .drow .dd small { color: var(--muted); font-size: 13px; }
+  .drow .cnt { font-size: 13px; color: var(--muted); text-align: right; min-width: 56px; }
+  .chip.game { background: var(--green-soft); color: var(--green-ink); }
+  .chip.train { background: var(--black); color: var(--white); }
+  .legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 5px; vertical-align: 1px; }
+  .legend i.tr { background: var(--black); }
+  .legend i { width: 11px; height: 11px; vertical-align: -1px; }
+  .legend i.ring { background: none; box-shadow: inset 0 0 0 2px var(--green); }
+  .legend i.today { background: none; box-shadow: inset 0 0 0 2px var(--red); }
+  .calp .legend { margin-bottom: 0; }
+  .dhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .dhead b { display: block; font: 800 20px/1.15 var(--display); }
+  .dhead small { color: var(--muted); font-size: 13px; }
+  .dmeta { color: var(--muted); font-size: 14px; margin: 6px 0 4px; }
+  .me { border-radius: 14px; background: var(--field); padding: 10px 12px; margin-top: 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .me b { font: 700 15px/1.25 var(--display); }
+  .me span { font-size: 14px; color: var(--muted); }
+  .me.ok { background: var(--green-soft); } .me.ok b { color: var(--green-ink); }
+  .me.no { color: var(--muted); font-size: 14px; }
+  .sets { margin-top: 8px; }
+  .srow { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .srow:last-child { border-bottom: 0; }
+  .srow .no { width: 22px; color: var(--muted); font-size: 13px; }
+  .srow .res { flex: 1; font: 600 17px/1 var(--display); }
+  .srow .res i { font-style: normal; color: var(--tc); }
+  .srow .res i.w { text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 4px; }
+  .sets.pl .srow:not(.win):not(.loss) { opacity: .5; }   /* игроку чужие сеты бледнее */
+  .people { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
+  .people span { font-size: 13px; background: var(--field); border-radius: 999px; padding: 5px 10px; }
+  .dinfo .btn.inline { margin-top: 12px; }
+
+  /* ---------- счёт за тренировку ---------- */
+  .crow { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
+  .crow span { color: var(--muted); }
+  .crow b { font: 600 16px/1 var(--display); }
+  .crow.big b { font: 800 26px/1 var(--display); color: var(--green-ink); }
+  .hintc { font-size: 12.5px; color: var(--muted); padding-top: 10px; }
+  .qrbox { display: flex; gap: 14px; align-items: center; }
+  .qr { width: 76px; height: 76px; flex: none; border-radius: 12px; background: var(--field) center/contain no-repeat; display: grid; place-items: center;
+    font: 800 18px/1 var(--display); color: var(--muted); box-shadow: inset 0 0 0 1.5px var(--line); }
+  .qrbox b { display: block; }
+  .qrbox small { display: block; font-size: 12.5px; color: var(--muted); margin: 2px 0 6px; }
+  .lnk { color: var(--green-ink); font-weight: 600; cursor: pointer; }
+  .lnk input { display: none; }
+  .msg { background: #EFFFE0; border-radius: 16px 16px 16px 4px; padding: 8px; margin-bottom: 6px; max-width: 320px; font-size: 14.5px; white-space: pre-wrap; box-shadow: 0 1px 1px rgba(0,0,0,.08); }
+  .msgqr { height: 150px; border-radius: 10px; background: #fff center/contain no-repeat; margin-bottom: 8px; }
+  .msg #msgText { padding: 0 4px 2px; }
+  .brow { display: flex; width: 100%; align-items: center; gap: 10px; border: 0; background: none; padding: 12px 0; border-bottom: 1px solid var(--line); text-align: left; }
+  .brow:last-child { border-bottom: 0; }
+  .brow[disabled] { color: inherit; cursor: default; }
+  .chip { font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 999px; background: var(--field); color: var(--muted); white-space: nowrap; }
+  .chip.ok { background: var(--green-soft); color: var(--green-ink); }
+  .chip.wait { background: #FFF2D9; color: #8A5300; }
+  .chip.bad { background: var(--red-soft); color: var(--red); }
+  .paid b { display: block; font: 800 20px/1.2 var(--display); }
+  .paid span { display: block; font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+  /* ---------- календарь ---------- */
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.38); z-index: 20; animation: fade .2s ease; }
+  .sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 21; background: var(--white); border-radius: 24px 24px 0 0;
+    padding: 8px 16px calc(18px + env(safe-area-inset-bottom)); max-width: 560px; margin: 0 auto; animation: up .26s cubic-bezier(.2,.8,.2,1); }
+  @keyframes up { from { transform: translateY(100%); } to { transform: none; } }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .grab { width: 38px; height: 5px; border-radius: 3px; background: var(--line); margin: 0 auto 12px; }
+  .calh { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .calh b { font: 800 18px/1 var(--display); }
+  .calh b::first-letter { text-transform: uppercase; }
+  .arw { width: 38px; height: 38px; border-radius: 50%; border: 0; background: var(--field); font-size: 22px; line-height: 1; }
+  .wk, .days { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; }
+  .wk span { font-size: 12px; color: var(--muted); padding: 4px 0 8px; font-weight: 600; }
+  .wk span.sat { color: var(--green-ink); }
+  .day { position: relative; height: 46px; border: 0; background: none; font: 500 17px/1 var(--text); display: grid; place-items: center; }
+  .day span { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; }
+  .day.out { color: #B8C1BA; }
+  .day.k-g span { background: var(--green); color: var(--white); font-weight: 700; }
+  .day.k-tr span { background: var(--black); color: var(--white); font-weight: 700; }
+  .day.hollow.k-g span { background: none; color: var(--green-ink); box-shadow: inset 0 0 0 2px var(--green); }
+  .day.hollow.k-tr span { background: none; color: var(--black); box-shadow: inset 0 0 0 2px var(--black); }
+  .day.today span { outline: 2.5px solid var(--red); outline-offset: 1.5px; }
+  .day.today:not(.k-g):not(.k-tr) span { color: var(--red); font-weight: 700; }
+  .day.sel span { transform: scale(1.1); font-weight: 800; }
+  .day.sel::after { content: ''; position: absolute; bottom: 0; left: 50%; width: 16px; height: 3px; margin-left: -8px; border-radius: 2px; background: var(--black); }
+  .day i { position: absolute; bottom: 2px; left: 50%; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--green); }
+  .day i.tr { background: var(--black); }
+  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin: 10px 0 14px; }
+  .legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 6px; vertical-align: 1px; }
+  .legend i.tr { background: var(--black); }
+
+  .toast { position: fixed; left: 16px; right: 16px; bottom: calc(var(--tabbar) + 84px + env(safe-area-inset-bottom)); z-index: 30; max-width: 528px; margin: 0 auto;
+    background: var(--black); color: var(--white); border-radius: 14px; padding: 13px 16px; font-size: 15px;
+    opacity: 0; transform: translateY(8px); transition: all .2s; pointer-events: none; }
+  .toast.show { opacity: 1; transform: none; }
+</style>
+</head>
+<body>
+<header>
+  <div class="stripe"></div>
+  <div class="hrow">
+    <button class="back" id="backbtn" data-a="home" aria-label="На главную" hidden><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <button class="datebtn" id="datebtn" data-a="cal"><span class="d" id="dTitle">Загрузка</span><span class="s"><span id="dWeek"></span><span id="status"></span></span></button>
+    <div class="seg" id="typeSeg"><button data-type="игра">Игра</button><button data-type="тренировка">Трен.</button></div>
+  </div>
+</header>
+<main id="app"></main>
+<div id="action" class="action" hidden></div>
+<nav class="tabbar" id="tabbar"></nav>
+<div id="overlay"></div>
+<div id="toast" class="toast"></div>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>window.VB_CONFIG = { api: 'https://script.google.com/macros/s/AKfycbwx8a_jLuMGgp0wejo15J0kkDaCetjC8c7a-9nZ93Tfv48jvjJozyng_FEi04Ib5NaOmw/exec' };</script>
+<script>
+const KEY = (location.hash.match(/k=([A-Za-z0-9]+)/) || [])[1] || '';
+const API_URL = (window.VB_CONFIG && window.VB_CONFIG.api) || '';
+const TEAMS = ['A', 'B', 'C'];
+const POSITIONS = ['связующий', 'доигровщик', 'диагональный', 'центральный блокирующий', 'либеро', 'универсал'];
+const LEVELS = [[0, 'Новичок'], [50, 'Любитель'], [150, 'Игрок'], [300, 'Опытный'], [500, 'Ветеран'], [800, 'Легенда']];
+const tg = window.Telegram && window.Telegram.WebApp;
+
+/* ---------- состояние ---------- */
+const S = {
+  role: 'admin', date: '', today: '', teamSize: 6, type: 'игра',
+  players: [], present: new Set(), team: {}, size: {}, days: {},
+  sets: [], maxNum: 0, pair: null,
+  tab: 'home', pick: { w: null, l: null, low: false }, q: '',
+  openType: null, calData: null, calSel: '', calM: null,          // главная и календарь
+  armed: null, err: null, loaded: false, offline: false, edit: null,
+  cal: null, stats: null, board: 'xp', scope: 'top', me: null,
+  self: { loaded: false, err: '', edit: false, stats: null },   // вкладка «Я» у админа
+  bill: null,                                                    // экран «Счёт за тренировку»
+  bal: null, myBal: null,                                        // «Баланс игр»: экран админа и блок игрока
+  done: false, fix: null, sum: null, setEdit: null, fromSet: false, help: false, calWant: false,   // завершённая игра и корректировки
+  resBusy: false, cardBusy: false, cardImg: ''                                                      // рассылка итогов и картинка для WeChat
+};
+
+/* ---------- хранилище и связь с сервером ---------- */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+};
+let outbox = store.get('vb_outbox', []);
+let flushing = false, retryT = null, saveT = null;
+
+function api(fn, ...args) {
+  if (window.google && google.script && google.script.run) {
+    return new Promise((resolve, reject) => {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](KEY, ...args);
+    });
+  }
+  return fetch(API_URL, {
+    method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ fn, key: KEY, initData: tg ? tg.initData : '', args })
+  }).then(r => r.json()).then(j => { if (j.error) throw new Error(j.error); return j.result; });
+}
+const msg = e => (e && e.message) || String(e);
+
+function enqueue(item) {
+  if (item.kind === 'day') {
+    outbox = outbox.filter((o, i) => !(o.kind === 'day' && o.payload.date === item.payload.date && !(i === 0 && flushing)));
+  }
+  outbox.push(item);
+  store.set('vb_outbox', outbox);
+  flush();
+}
+
+async function flush() {
+  if (flushing) return;
+  if (!outbox.length) { renderStatus(); return; }
+  flushing = true; renderStatus();
+  while (outbox.length) {
+    const it = outbox[0];
+    try {
+      if (it.kind === 'player') await api('api_addPlayer', it.payload);
+      else if (it.kind === 'pupd') await api('api_updatePlayer', it.payload);
+      else if (it.kind === 'day') await api('api_saveDay', it.payload);
+      else if (it.kind === 'set') {
+        await api('api_recordSet', it.payload);
+        const s = S.sets.find(x => x.id === it.payload.id);
+        if (s) s.pending = false;
+      }
+      else if (it.kind === 'del') await api('api_deleteSet', it.id);
+      else if (it.kind === 'supd') await api('api_updateSet', it.payload);
+      else if (it.kind === 'fin') { const r = await api('api_finishDay', it.date); if (it.date === S.date) S.sum = r; }
+      outbox.shift(); store.set('vb_outbox', outbox);
+      S.offline = false; S.stats = null;
+    } catch (e) {
+      const m = msg(e);
+      if (/Нет доступа/.test(m)) { flushing = false; S.err = 'Нет доступа: проверь ссылку'; render(); return; }
+      const network = /network|http 0|failed to fetch|timeout|timed out|connection|связ/i.test(m);
+      if (!network) it.tries = (it.tries || 0) + 1;
+      if (/ОШИБКА/.test(m) || it.tries >= 3) {   // сервер не принимает запись: убираем в сторону, чтобы очередь не застряла
+        outbox.shift(); store.set('vb_outbox', outbox);
+        const failed = store.get('vb_failed', []); failed.push({ item: it, error: m }); store.set('vb_failed', failed);
+        toast('Не сохранено: ' + m.replace(/^.*ОШИБКА:\s*/, ''));
+        continue;
+      }
+      store.set('vb_outbox', outbox);
+      flushing = false; S.offline = network; renderStatus();
+      clearTimeout(retryT); retryT = setTimeout(flush, 5000);
+      return;
+    }
+  }
+  flushing = false; renderStatus();
+  if (S.tab === 'log' || S.tab === 'sum') render();
+}
+
+function dayPayload() {
+  return { date: S.date, type: S.type, present: [...S.present], team: S.team, size: S.size, pair: S.pair };
+}
+function scheduleSave() {
+  S.days[S.date] = S.type;
+  clearTimeout(saveT);
+  saveT = setTimeout(() => { saveT = null; enqueue({ kind: 'day', payload: dayPayload() }); }, 700);
+}
+function saveNow() {
+  if (saveT) { clearTimeout(saveT); saveT = null; enqueue({ kind: 'day', payload: dayPayload() }); }
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveNow(); });
+
+/* ---------- загрузка ---------- */
+async function load(date) {
+  saveNow();
+  S.loaded = false; S.err = null; render();
+  try {
+    const d = await api('api_load', date || '');
+    S.role = d.role || 'admin';
+    S.today = d.today;
+    if (S.role === 'player') {
+      S.me = d.me || null; S.loaded = true;
+      if (!['card', 'me', 'cal', 'board'].includes(S.tab)) S.tab = S.me && S.me.id ? 'me' : 'card';
+      render(); return;
+    }
+    S.date = d.date; S.teamSize = d.teamSize || 6;
+    S.players = d.players; S.days = d.days || {};
+    outbox.filter(o => o.kind === 'player').forEach(o => {
+      if (!S.players.some(p => p.id === o.payload.id)) S.players.push(playerFrom(o.payload));
+    });
+    let day = d.day;
+    const localDay = outbox.filter(o => o.kind === 'day' && o.payload.date === S.date).pop();
+    if (localDay) day = localDay.payload;
+    S.type = (day && day.type) || 'игра';
+    S.present = new Set(day ? day.present : []);
+    S.team = (day && day.team) || {};
+    S.size = (day && day.size) || {};
+    const sent = new Set(d.sets.map(s => s.id));
+    const deleted = new Set(outbox.filter(o => o.kind === 'del').map(o => o.id));
+    const pending = outbox.filter(o => o.kind === 'set' && o.payload.date === S.date && !sent.has(o.payload.id))
+      .map(o => Object.assign({}, o.payload, { pending: true }));
+    S.sets = d.sets.concat(pending).filter(s => !deleted.has(s.id)).sort((a, b) => a.num - b.num);
+    S.maxNum = S.sets.reduce((m, s) => Math.max(m, s.num), 0);
+    S.pair = nextPair() || (day && day.pair) || null;
+    S.pick = { w: null, l: null, low: false };
+    // Завершённая игра открывается итогами. Прошлые игровые дни с сетами завершены сами.
+    S.done = (d.day && d.day.done) || (S.type === 'игра' && S.date < S.today && S.sets.length > 0) ||
+      outbox.some(o => o.kind === 'fin' && o.date === S.date);
+    S.fix = null; S.sum = null; S.setEdit = null; S.fromSet = false; S.cardImg = '';
+    if (S.openType) {   // пришли с главной: «Записать игру» или «Записать тренировку»
+      const empty = !(day && day.present && day.present.length) && !S.sets.length;
+      if (empty) S.type = S.openType;
+      else if (S.type !== S.openType) toast(`Этот день уже записан как ${S.type === 'игра' ? 'игра' : 'тренировка'}`);
+      S.openType = null;
+    }
+    S.loaded = true;
+    if (S.type === 'тренировка' && (S.tab === 'teams' || S.tab === 'set')) S.tab = 'att';
+    if (S.done) S.tab = S.tab === 'log' ? 'log' : 'sum';
+  } catch (e) {
+    S.err = 'Не загрузилось: ' + msg(e);
+  }
+  render(); flush();
+}
+
+let statsLoading = false;
+async function loadStats() {
+  if (statsLoading) return;
+  statsLoading = true;
+  try { S.stats = await api('api_stats'); } catch (e) { S.stats = { error: msg(e) }; }
+  statsLoading = false;
+  if (S.tab === 'board' || S.tab === 'me') render();
+}
+
+// Вкладка «Я» у админа: своя карточка и свои итоги идут от имени Телеграма, а не по ключу.
+let selfBusy = false, selfStatsBusy = false;
+async function loadSelf() {
+  if (selfBusy) return;
+  selfBusy = true;
+  try { S.me = (await api('api_myCard')).me; S.self.err = ''; }
+  catch (e) { S.self.err = msg(e).replace(/^.*ОШИБКА:\s*/, ''); }
+  S.self.loaded = true; selfBusy = false;
+  if (S.tab === 'self') render();
+}
+async function loadSelfStats() {
+  if (selfStatsBusy) return;
+  selfStatsBusy = true;
+  try { S.self.stats = await api('api_myStats'); } catch (e) { S.self.stats = { error: msg(e) }; }
+  selfStatsBusy = false;
+  if (S.tab === 'self') render();
+}
+
+/* ---------- логика ---------- */
+const playerFrom = c => Object.assign({ count: 0, lastSeen: '' }, c, { name: (c.lastName + ' ' + c.firstName).trim() });
+const pname = id => (S.players.find(p => p.id === id) || { name: id }).name;
+const roster = t => S.players.filter(p => S.present.has(p.id) && S.team[p.id] === t).map(p => p.id);
+const sizeOf = t => (S.size[t] === undefined || S.size[t] === null) ? S.teamSize : S.size[t];
+const guestsOf = t => Math.max(0, sizeOf(t) - roster(t).length);
+const liveSets = () => S.sets.slice().sort((a, b) => a.num - b.num);
+const nextNum = () => S.maxNum + 1;
+
+// Ротация: после сета садится победитель, если отыграл 2 подряд, иначе проигравший.
+function nextPair() {
+  const ss = liveSets();
+  if (!ss.length) return null;
+  const last = ss[ss.length - 1];
+  const W = last.winner, L = W === last.t1 ? last.t2 : last.t1;
+  const sit = TEAMS.find(t => t !== last.t1 && t !== last.t2);
+  let streak = 0;
+  for (let i = ss.length - 1; i >= 0; i--) {
+    if (ss[i].t1 === W || ss[i].t2 === W) streak++; else break;
+  }
+  return streak >= 2 ? [L, sit] : [W, sit];
+}
+
+function plural(n, one, few, many) {
+  const a = n % 10, b = n % 100;
+  if (a === 1 && b !== 11) return one;
+  if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return few;
+  return many;
+}
+function level(xp) {
+  let i = 0;
+  while (i + 1 < LEVELS.length && xp >= LEVELS[i + 1][0]) i++;
+  const next = LEVELS[i + 1];
+  return { name: LEVELS[i][1], from: LEVELS[i][0], next: next ? next[0] : null, nextName: next ? next[1] : null };
+}
+function dateTitle(d) {
+  return d ? new Date(d + 'T12:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) : '';
+}
+function weekday(d) {
+  if (!d) return '';
+  const w = new Date(d + 'T12:00:00').toLocaleDateString('ru-RU', { weekday: 'long' });
+  return w.charAt(0).toUpperCase() + w.slice(1) + (d === S.today ? ', сегодня' : '') + '. ';
+}
+function quarterName(q) {
+  const m = String(q || '').match(/^(\d{4})-К(\d)$/);
+  if (!m) return q || '';
+  return ['', 'январь–март', 'апрель–июнь', 'июль–сентябрь', 'октябрь–декабрь'][+m[2]] + ' ' + m[1];
+}
+
+function recordSet() {
+  const [a, b] = S.pair, w = S.pick.w, l = S.pick.l;
+  if (!w || l === null) return;
+  if (!roster(a).length && !roster(b).length) { toast('В обеих командах нет наших. Проверь вкладку «Команды»'); return; }
+  const ws = Math.max(25, l + 2);
+  const p = {
+    id: 'S' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+    date: S.date, num: nextNum(), t1: a, t2: b,
+    r1: roster(a), g1: guestsOf(a), r2: roster(b), g2: guestsOf(b),
+    winner: w, sc1: w === a ? ws : l, sc2: w === b ? ws : l
+  };
+  S.sets.push(Object.assign({}, p, { pending: true }));
+  S.maxNum = p.num;
+  enqueue({ kind: 'set', payload: p });
+  S.pick = { w: null, l: null, low: false };
+  S.pair = nextPair();
+  scheduleSave();
+  if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+  toast(`Сет ${p.num} записан. Дальше ${S.pair[0]} против ${S.pair[1]}`);
+  render(); window.scrollTo(0, 0);
+}
+
+/* ---------- отрисовка ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// Все строки из данных проходят через esc() до сборки разметки; здесь вставляем готовый фрагмент.
+function setHTML(el, html) { el.replaceChildren(document.createRange().createContextualFragment(html)); }
+
+const ICONS = {
+  att: '<path d="M4 12.5l4.5 4.5L20 6"/>',
+  teams: '<circle cx="8" cy="8" r="3"/><circle cx="16.5" cy="9" r="2.5"/><path d="M2.5 19c.8-3.2 3-5 5.5-5s4.7 1.8 5.5 5M14 14.3c2.6-.6 5.5.8 6.5 4.7"/>',
+  set: '<circle cx="12" cy="12" r="9"/><path d="M12 3c-2.5 3-2.5 6 0 9s2.5 6 0 9M3.5 9c4 1.5 13 1.5 17 0M3.5 15c4-1.5 13-1.5 17 0"/>',
+  log: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
+  board: '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 01-10 0V4zM7 6H4v1a3 3 0 003 3M17 6h3v1a3 3 0 01-3 3"/>',
+  card: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.2-4 4.3-6 8-6s6.8 2 8 6"/>',
+  me: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'
+};
+ICONS.self = ICONS.card;
+ICONS.home = '<path d="M3 11l9-7 9 7M5 9.5V20h5v-6h4v6h5V9.5"/>';
+ICONS.sum = '<path d="M5 20V12M10 20V7M15 20v-5M20 20V4"/>';
+ICONS.bal = '<rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18M7 15h4"/>';
+ICONS.cal = '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>';
+const TAB_NAMES = { att: 'Пришли', teams: 'Команды', set: 'Сет', log: 'Журнал', board: 'Рейтинг', card: 'Карточка', me: 'Мои итоги', self: 'Я', home: 'Главная', cal: 'Календарь', sum: 'Итоги' };
+const DAY_TABS = ['att', 'teams', 'set', 'log'];
+const editIcon = '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></svg>';
+
+function render() {
+  const admin = S.role !== 'player';
+  const inDay = admin && (DAY_TABS.includes(S.tab) || S.tab === 'sum');   // внутри записи дня: отметки, команды, сеты, журнал
+  $('#typeSeg').hidden = !inDay || S.done;   // у завершённой игры тип уже не меняют
+  $('#tabbar').hidden = inDay && !!S.fix;
+  $('#backbtn').hidden = !inDay;
+  $('#datebtn').disabled = true;
+  document.querySelectorAll('#typeSeg button').forEach(b => b.classList.toggle('on', b.dataset.type === S.type));
+  $('#dTitle').textContent = inDay ? (dateTitle(S.date) || 'Загрузка') : 'Волейбол Гуанчжоу';
+  $('#dWeek').textContent = inDay ? weekday(S.date) : '';
+  const tabs = !admin ? ['card', 'me', 'cal', 'board'] : inDay ? (S.done ? ['sum', 'log'] : DAY_TABS) : ['home', 'cal', 'board', 'self'];
+  setHTML($('#tabbar'), tabs.map(t => {
+    const hide = admin && S.type === 'тренировка' && (t === 'teams' || t === 'set');
+    return `<button data-tab="${t}" class="${S.tab === t ? 'on' : ''}" ${hide ? 'hidden' : ''}><svg viewBox="0 0 24 24">${ICONS[t]}</svg>${TAB_NAMES[t]}</button>`;
+  }).join(''));
+
+  const app = $('#app');
+  let act = '';
+  if (S.err) {
+    setHTML(app, `<div class="panel pad"><div class="warn">${esc(S.err)}</div><button class="btn inline" data-a="reload">Повторить</button></div>`);
+  } else if (!S.loaded) {
+    setHTML(app, '<div class="empty">Загружаю…</div>');
+  } else if (S.edit) {
+    setHTML(app, viewCard(S.edit, true));
+    act = `<button class="btn" data-a="cancelEdit">Отмена</button><button class="btn go" data-a="saveCard">Сохранить</button>`;
+  } else if (S.bill) {
+    const v = viewBill();
+    setHTML(app, v.html); act = v.action || '';
+  } else if (S.bal) {
+    const v = viewBal();
+    setHTML(app, v.html); act = v.action || '';
+  } else if (S.setEdit) {
+    const v = viewSetEdit();
+    setHTML(app, v.html); act = v.action;
+  } else {
+    const v = ({ att: viewAtt, teams: viewTeams, set: viewSet, log: viewLog, board: viewBoard, card: viewMyCard, me: viewMe, self: viewSelf,
+      home: viewHome, cal: viewCalendar, sum: viewSum })[S.tab]();
+    if (inDay && S.fix) {   // корректировки завершённой игры
+      v.html = `<div class="fixbar">✏️ Корректировки. Игра уже завершена, после «Готово» итоги и рейтинг пересчитаются.</div>` + v.html;
+      v.action = `<button class="btn go" data-a="fixDone">Готово</button>`;
+    }
+    setHTML(app, v.html); act = v.action || '';
+  }
+  const ab = $('#action');
+  ab.hidden = !act;
+  setHTML(ab, act ? `<div class="inner">${act}</div>` : '');
+  renderStatus();
+  renderCal();
+}
+
+function renderStatus() {
+  const el = $('#status'), n = outbox.length;
+  if (S.role === 'player') { el.className = ''; el.textContent = 'Карточка, итоги и рейтинг'; return; }
+  if (!n) { el.className = 'ok'; el.textContent = 'Всё сохранено'; }
+  else if (S.offline) { el.className = 'bad'; el.textContent = `Нет связи. Ждут отправки: ${n}`; }
+  else { el.className = 'wait'; el.textContent = `Сохраняю… ${n}`; }
+}
+
+function viewAtt() {
+  const n = S.present.size;
+  const action = S.type === 'игра'
+    ? `<button class="btn go" data-a="toTeams">Дальше: команды (${n})</button>`
+    : `<button class="btn go" data-a="bill" ${n ? '' : 'disabled'}>Счёт за тренировку (${n})</button>`;
+  return { action, html: `
+    <h2>${S.type === 'игра' ? 'Кто пришёл' : 'Кто на тренировке'}</h2>
+    <p class="lead">${S.type === 'игра' ? 'Отмечай только своих. Китайцы посчитаются сами.' : 'Отметь пришедших. После тренировки нажми «Счёт за тренировку».'}</p>
+    <input id="q" class="search" placeholder="Фамилия, имя или ник" value="${esc(S.q)}" autocomplete="off">
+    <div class="panel" id="attList">${attList()}</div>
+    <button class="btn" data-a="new">Добавить нового игрока</button>` };
+}
+
+function attList() {
+  const q = S.q.trim().toLowerCase();
+  const hay = p => [p.name, p.middleName, p.tg, p.wx].join(' ').toLowerCase();
+  const list = S.players
+    .filter(p => !q || hay(p).includes(q))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ru'));
+  if (!list.length) return '<div class="empty">Никого не нашлось. Добавь нового игрока ниже.</div>';
+  return list.map(p => {
+    const on = S.present.has(p.id);
+    const cnt = p.count ? `${p.count} ${plural(p.count, 'игра', 'игры', 'игр')}` : 'новичок';
+    const full = p.dob && (p.tg || p.wx);
+    const sub = full ? esc(p.tg ? '@' + p.tg : p.wx) : 'анкета не заполнена';
+    return `<div class="prow ${on ? 'on' : ''}">
+      <button class="ptog" data-a="toggle" data-id="${esc(p.id)}"><span class="tick"></span>
+        <span class="nm">${esc(p.name)}<small class="${full ? '' : 'miss'}">${sub}</small></span><span class="cnt">${cnt}</span></button>
+      <button class="pedit" data-a="edit" data-id="${esc(p.id)}" aria-label="Карточка игрока">${editIcon}</button></div>`;
+  }).join('');
+}
+
+// Сколько в команде всего и чего не хватает до полного состава.
+function teamFill(t) {
+  const r = roster(t).length, g = guestsOf(t), tot = r + g;
+  return { r, g, tot, need: S.teamSize - tot };
+}
+const fillText = f => f.need > 0 ? `${f.tot} из ${S.teamSize}, не хватает ${f.need}` : f.need < 0 ? `${f.tot} из ${S.teamSize}, лишних ${-f.need}` : `${f.tot} из ${S.teamSize} ✓`;
+const shortTeams = list => list.filter(t => teamFill(t).need !== 0);
+
+function viewTeams() {
+  const pres = S.players.filter(p => S.present.has(p.id)).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  if (!pres.length) return { html: '<h2>Команды</h2><div class="empty">Сначала отметь пришедших на вкладке «Пришли».</div>' };
+  const none = pres.filter(p => !S.team[p.id]).length;
+  const cards = TEAMS.map(t => {
+    const f = teamFill(t);
+    return `<div class="tcard t${t}"><b>${t}</b>
+      <div class="tl">Наших: <em>${f.r}</em></div>
+      <div class="tl">Китайцев:</div>
+      <div class="ctl"><button class="mini" data-a="size-" data-t="${t}" aria-label="Меньше китайцев в ${t}">−</button>
+      <em class="gn">${f.g}</em>
+      <button class="mini" data-a="size+" data-t="${t}" aria-label="Больше китайцев в ${t}">+</button></div>
+      <div class="tsum ${f.need ? 'bad' : ''}">Всего: ${fillText(f)}</div></div>`;
+  }).join('');
+  const title = S.fromSet ? `Составы на сет №${nextNum()}` : 'Команды';
+  const lead = S.fromSet ? 'Прошлые сеты не меняются: у каждого записанного сета свои составы.'
+    : 'Нажми букву у игрока. Китайцы добираются до 6 сами, если их меньше, убавь «−».';
+  return { action: `<button class="btn go" data-a="toSet">${S.fromSet ? 'Готово, к сету' : 'Дальше: сет'}</button>`, html: `
+    <h2>${title}</h2>
+    <p class="lead">${lead}</p>
+    <div class="teams3">${cards}</div>
+    <div class="panel">${none ? `<div class="warn">Без команды: ${none}</div>` : ''}
+    ${pres.map(p => `<div class="trow"><span class="nm">${esc(p.name)}</span><span class="tpick">${
+      TEAMS.map(t => `<button class="tb t${t} ${S.team[p.id] === t ? 'on' : ''}" data-a="team" data-id="${esc(p.id)}" data-t="${t}">${t}</button>`).join('')
+    }</span></div>`).join('')}</div>` };
+}
+
+function pairButtons() {
+  return `<div class="pairs">${[['A', 'B'], ['A', 'C'], ['B', 'C']].map(p =>
+    `<button class="pb ${S.pair && p.every(t => S.pair.includes(t)) ? 'on' : ''}" data-a="pair" data-p="${p.join('')}">${p[0]} – ${p[1]}</button>`
+  ).join('')}</div>`;
+}
+
+function viewSet() {
+  if (!S.pair) return { html: `<h2>Первый сет</h2><p class="lead">Кто выходит на площадку первыми?</p>${pairButtons()}` };
+  const [a, b] = S.pair, w = S.pick.w, l = S.pick.l;
+  const ws = l === null ? 25 : Math.max(25, l + 2);
+  const half = t => {
+    const names = roster(t).map(id => esc(pname(id))).join(', ') || 'наших нет';
+    const g = guestsOf(t);
+    const isW = w === t, isL = w && w !== t;
+    const score = isW ? ws : isL ? (l === null ? '?' : l) : '–';
+    return `<button class="half t${t} ${isW ? 'win' : ''} ${isL ? 'lose' : ''}" data-a="win" data-t="${t}" aria-pressed="${isW}">
+      <span class="tn">Команда ${t}</span>
+      <span class="sc">${score}</span><span class="ros">${names}${g ? ` + ${g} кит.` : ''}</span></button>`;
+  };
+  const num = n => `<button class="num ${l === n ? 'on' : ''}" data-a="score" data-n="${n}">${n}</button>`;
+  return {
+    action: `<button class="btn go" data-a="record" ${w && l !== null ? '' : 'disabled'}>Записать сет ${nextNum()}</button>`,
+    html: `
+    <div class="board">${half(a)}${half(b)}</div>
+    ${shortTeams([a, b]).map(t => `<div class="warn">Команда ${t}: ${fillText(teamFill(t))}. Если так и есть, записывай.</div>`).join('')}
+    <button class="more" data-a="toTeamsSet">Изменить составы</button>
+    <p class="hint">${w ? 'Теперь очки проигравшей команды' : 'Нажми на команду, которая выиграла'}</p>
+    <div class="grid">${Array.from({ length: 15 }, (_, i) => num(i + 10)).join('')}</div>
+    ${S.pick.low ? `<div class="grid" style="margin-top:7px">${Array.from({ length: 10 }, (_, i) => num(i)).join('')}</div>` : `<button class="more" data-a="low">Меньше 10</button>`}
+    ${l !== null && l >= 24 ? `<div class="deuce">Игра на баланс, у проигравших <button class="mini" data-a="l-">−</button><b>${l}</b><button class="mini" data-a="l+">+</button></div>` : ''}
+    <p class="sub-h">Играет другая пара?</p>${pairButtons()}
+    ${S.sets.length ? finishButton() : ''}` };
+}
+
+function finishButton() {
+  const armed = S.armed === 'finish';
+  return `<button class="btn finish ${armed ? 'armed' : ''}" data-a="finish">${armed ? 'Точно завершить? Нажми ещё раз' : `Завершить игру (${S.sets.length} ${plural(S.sets.length, 'сет', 'сета', 'сетов')})`}</button>`;
+}
+
+function viewLog() {
+  const ss = liveSets().reverse();
+  if (!ss.length) return { html: '<h2>Журнал</h2><div class="empty">За этот день сетов пока нет.</div>' };
+  const names = (ids, g) => (ids.map(id => esc(pname(id))).join(', ') || 'наших нет') + (g ? ` + ${g} кит.` : '');
+  const fixing = S.fix === 'sets', ro = S.done && !fixing;
+  const lead = fixing ? 'Нажми «Изменить» у сета, чтобы поправить счёт, составы или китайцев.'
+    : ro ? 'Игра завершена. Чтобы поправить сет, нажми «Внести корректировки».'
+    : 'Ошибочный сет можно удалить, рейтинг пересчитается.';
+  const btn = s => fixing ? `<button class="del" data-a="editSet" data-id="${esc(s.id)}">Изменить</button>`
+    : ro ? '' : `<button class="del ${S.armed === s.id ? 'armed' : ''}" data-a="del" data-id="${esc(s.id)}">${S.armed === s.id ? 'Точно удалить?' : 'Удалить'}</button>`;
+  return { action: ro ? `<button class="btn" data-a="fix">Внести корректировки</button>` : !S.done ? finishButton() : '',
+    html: `<h2>Журнал</h2><p class="lead">${ss.length} ${plural(ss.length, 'сет', 'сета', 'сетов')} за день. ${lead}</p>
+    ${ro && S.armed === 'fix' ? fixChoice() : ''}
+    <div class="panel">${ss.map(s => `
+    <div class="lrow"><div class="lt"><span class="no">№${s.num}</span>
+      <span class="res"><i class="t${s.t1} ${s.winner === s.t1 ? 'w' : ''}">${s.t1}</i> ${s.sc1}:${s.sc2} <i class="t${s.t2} ${s.winner === s.t2 ? 'w' : ''}">${s.t2}</i>${s.pending ? ' <small>не отправлен</small>' : ''}</span>
+      ${btn(s)}</div>
+      <div class="ls">${s.t1}: ${names(s.r1, s.g1)}</div><div class="ls">${s.t2}: ${names(s.r2, s.g2)}</div></div>`).join('')}</div>` };
+}
+
+/* ---------- итоги завершённой игры и корректировки ---------- */
+let sumBusy = false;
+async function loadSum() {
+  if (sumBusy || outbox.length) return;   // сначала отправим всё из очереди, потом посчитаем
+  sumBusy = true;
+  const date = S.date;
+  try { const r = await api('api_daySummary', date); if (date === S.date) S.sum = r; }
+  catch (e) { if (date === S.date) S.sum = { error: msg(e).replace(/^.*ОШИБКА:\s*/, '') }; }
+  sumBusy = false;
+  if (S.tab === 'sum') render();
+}
+
+function fixChoice() {
+  return `<div class="panel pad"><b>Что поправить?</b>
+    <div class="choice"><button class="btn" data-a="fixAtt">Кто пришёл</button><button class="btn" data-a="fixSets">Сеты</button></div>
+    <button class="more" data-a="fixCancel">Отмена</button></div>`;
+}
+
+function viewSum() {
+  const s = S.sum;
+  if (!s) {
+    loadSum();
+    const wait = !outbox.length ? 'Считаю итоги…' : S.offline ? 'Нет связи. Итоги посчитаются, когда она появится' : 'Сохраняю и считаю итоги…';
+    return { html: `<h2>Итоги игры</h2><div class="empty">${wait}</div>` };
+  }
+  if (s.error) return { html: `<h2>Итоги игры</h2><div class="panel pad"><div class="warn">${esc(s.error)}</div><button class="btn inline" data-a="sumRetry">Повторить</button></div>` };
+  const rows = s.players.map(p => `<div class="sumrow"><span class="nm">${esc(p.name)}</span>
+    <span class="sv">${p.sets} ${plural(p.sets, 'сет', 'сета', 'сетов')}</span>
+    <span class="sv">${p.wins} ${plural(p.wins, 'победа', 'победы', 'побед')}</span>
+    <span class="xp">+${p.xp} XP</span></div>`).join('');
+  return { action: `<button class="btn" data-a="fix">Внести корректировки</button>`, html: `
+    <h2>Итоги игры</h2>
+    <p class="lead">${s.sets} ${plural(s.sets, 'сет', 'сета', 'сетов')} · ${s.players.length} ${plural(s.players.length, 'человек', 'человека', 'человек')}. Игра завершена, игроки уже видят итоги и рейтинг.</p>
+    ${S.armed === 'fix' ? fixChoice() : ''}
+    <div class="panel">${rows || '<div class="empty">Наших в этот день не было</div>'}</div>
+    ${s.send ? sendPanel(s.send) : ''}
+    ${s.card ? cardPanel() : ''}` };
+}
+
+function sendLabel(sd) {
+  if (S.resBusy) return 'Рассылаю…';
+  if (S.armed === 'resSend') return 'Точно разослать? Нажми ещё раз';
+  if (!sd.todo) return sd.sent ? 'Итоги разосланы ✓' : 'Разослать некому: никого нет в боте';
+  if (!sd.sent) return `Разослать итоги игрокам (${sd.todo})`;
+  return sd.changed ? `Разослать исправленные (${sd.todo})` : `Дослать (${sd.todo})`;
+}
+
+function sendPanel(sd) {
+  const note = !sd.sent ? 'Каждый получит в Telegram свои сеты, победы, XP за игру и серию.'
+    : `Отправлено <b>${sd.sent} из ${sd.total}</b>.` + (sd.changed ? ` После правок цифры поменялись у ${sd.changed}, им уйдёт исправление.` : '');
+  return `<p class="sub-h">Рассылка игрокам</p>
+    <div class="panel pad"><p class="sendnote">${note}</p>
+    ${sd.nobot.length ? `<p class="nobot">Нет в Telegram: ${sd.nobot.map(esc).join(', ')}. Их итоги бот пришлёт тебе готовым сообщением, перешли в WeChat.</p>` : ''}
+    <button class="btn ${sd.todo ? 'go' : ''} ${S.armed === 'resSend' ? 'armed' : ''}" data-a="resSend" ${sd.todo && !S.resBusy ? '' : 'disabled'}>${sendLabel(sd)}</button></div>`;
+}
+
+function cardPanel() {
+  return `<p class="sub-h">Для группы в WeChat</p>
+    <div class="panel pad"><p class="sendnote">Картинка с итогами дня. Бот пришлёт её тебе в Telegram вместе с текстом для подписи.
+    В таблицу попадают только те, кто дал согласие на публикацию.</p>
+    ${S.cardImg ? `<img class="cardimg" src="${S.cardImg}" alt="Итоги для WeChat">` : ''}
+    <button class="btn" data-a="resCard" ${S.cardBusy ? 'disabled' : ''}>${S.cardBusy ? 'Рисую и отправляю…' : S.cardImg ? 'Прислать ещё раз' : 'Картинка для WeChat'}</button></div>`;
+}
+
+async function sendResults() {
+  if (outbox.length) { toast('Подожди пару секунд: сохраняю изменения'); flush(); return; }
+  S.resBusy = true; S.armed = null; render();
+  try {
+    const r = await api('api_resultsSend', S.date);
+    S.sum = r;
+    const f = r.result.failed.length;
+    toast(`Отправлено: ${r.result.sent}` + (r.result.fwd ? `. Тебе для WeChat: ${r.result.fwd}` : '') + (f ? `. Не дошло: ${f}` : ' 🙌'));
+  } catch (e) { toast('Не отправилось: ' + msg(e).replace(/^.*ОШИБКА:\s*/, '')); }
+  S.resBusy = false; render();
+}
+
+async function sendCard() {
+  S.cardBusy = true; render();
+  try {
+    S.cardImg = await drawCard(S.sum.card);
+    render();
+    await api('api_resultsCard', S.date, S.cardImg);
+    toast('Картинка у тебя в Telegram 📩');
+  } catch (e) { toast('Не получилось: ' + msg(e).replace(/^.*ОШИБКА:\s*/, '')); }
+  S.cardBusy = false; render();
+}
+
+/* ---------- картинка «Итоги субботы» для WeChat (1080 px в ширину) ---------- */
+async function drawCard(d) {
+  const DISP = '"Unbounded", "Arial Black", sans-serif', TXT = '"Golos Text", system-ui, sans-serif';
+  try { await Promise.all(['800 40px Unbounded', '400 20px "Golos Text"', '600 20px "Golos Text"', '700 20px "Golos Text"'].map(f => document.fonts.load(f, 'Итоги 123'))); } catch (e) {}
+  const W = 1080, P = 72, GREEN = '#00A04A', INK = '#007A38', RED = '#E21E26', MUTED = '#5b6660';
+  const noms = [];
+  if (d.best) noms.push({ bg: GREEN, fg: '#fff', label: '🏆 Команда дня', big: 'Команда ' + d.best.t,
+    sub: `${d.best.wins} ${plural(d.best.wins, 'победа', 'победы', 'побед')} из ${d.best.sets} ${plural(d.best.sets, 'сета', 'сетов', 'сетов')}, ${d.best.pct}%` });
+  if (d.hot) noms.push({ bg: RED, fg: '#fff', label: '🔥 Самый жаркий сет', big: `№${d.hot.num} · ${d.hot.ws}:${d.hot.ls}`,
+    sub: d.hot.deuce ? `${d.hot.w} дожала ${d.hot.l} на балансе` : `${d.hot.w} против ${d.hot.l}` });
+  if (d.rout && (!d.hot || d.rout.num !== d.hot.num)) noms.push({ bg: '#000', fg: '#fff', label: '💥 Разгром дня', big: `№${d.rout.num} · ${d.rout.ws}:${d.rout.ls}`, sub: `${d.rout.w} против ${d.rout.l}` });
+  if (d.most) noms.push({ bg: '#fff', fg: '#000', label: '💪 Больше всех на площадке', big: `${d.most.n} ${plural(d.most.n, 'сет', 'сета', 'сетов')}`, sub: d.most.who });
+  const nomRows = Math.ceil(noms.length / 2), rows = d.table.length + (d.hidden ? 1 : 0);
+  const yTiles = 300, yNoms = yTiles + 178 + 22, yTable = yNoms + nomRows * (166 + 22), tableH = rows ? 28 + 56 + rows * 55 : 0;
+  const yFoot = yTable + tableH + (rows ? 62 : 40), H = yFoot + 50;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+  const box = (x, y, w, h, r, fill) => { g.fillStyle = fill; g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); g.fill(); };
+  const text = (t, x, y, font, color, align, maxW) => {
+    g.font = font; g.fillStyle = color; g.textAlign = align || 'left';
+    let s = String(t);
+    if (maxW) while (s.length > 1 && g.measureText(s).width > maxW) s = s.slice(0, -2) + '…';
+    g.fillText(s, x, y); return g.measureText(s).width;
+  };
+  const fit = (t, size, weight, fam, maxW) => { let z = size; g.font = `${weight} ${z}px ${fam}`; while (z > 18 && g.measureText(t).width > maxW) { z -= 2; g.font = `${weight} ${z}px ${fam}`; } return `${weight} ${z}px ${fam}`; };
+  g.fillStyle = '#F2F5F2'; g.fillRect(0, 0, W, H);
+  g.fillStyle = GREEN; g.fillRect(0, 0, W / 2, 14); g.fillStyle = RED; g.fillRect(W / 2, 0, W / 2, 14);
+  text('ВОЛЕЙБОЛ ГУАНЧЖОУ', P, 100, `600 30px ${TXT}`, INK);
+  text(d.title, P, 195, fit(d.title, 84, 800, DISP, W - 2 * P), '#000');
+  const sub = `${d.dateText} · ${d.sets} ${plural(d.sets, 'сет', 'сета', 'сетов')} · ${d.ours} ${plural(d.ours, 'наш', 'наших', 'наших')} и друзья из Китая 🇨🇳`;
+  text(sub, P, 252, fit(sub, 34, 400, TXT, W - 2 * P), MUTED);
+  const tw = (W - 2 * P - 44) / 3;
+  [[d.sets, plural(d.sets, 'сет', 'сета', 'сетов')], [d.ours, plural(d.ours, 'наш игрок', 'наших игрока', 'наших игроков')],
+    [d.teams.map(t => t.wins).join('·'), 'победы команд ' + d.teams.map(t => t.t).join(' · ')]].forEach(([b, l], i) => {
+    const x = P + i * (tw + 22);
+    box(x, yTiles, tw, 178, 28, '#fff');
+    text(b, x + 28, yTiles + 92, fit(String(b), 64, 800, DISP, tw - 56), '#000');
+    text(l, x + 28, yTiles + 136, fit(l, 26, 400, TXT, tw - 56), MUTED);
+  });
+  const nw = (W - 2 * P - 22) / 2;
+  noms.forEach((n, i) => {
+    const x = P + (i % 2) * (nw + 22), y = yNoms + Math.floor(i / 2) * (166 + 22);
+    box(x, y, nw, 166, 28, n.bg);
+    g.globalAlpha = 0.85; text(n.label, x + 28, y + 52, `400 24px ${TXT}`, n.fg, 'left', nw - 56); g.globalAlpha = 1;
+    text(n.big, x + 28, y + 105, fit(n.big, 40, 800, DISP, nw - 56), n.fg);
+    g.globalAlpha = 0.85; text(n.sub, x + 28, y + 142, `400 24px ${TXT}`, n.fg, 'left', nw - 56); g.globalAlpha = 1;
+  });
+  if (rows) {
+    box(P, yTable, W - 2 * P, tableH, 28, '#fff');
+    const xL = P + 32, xX = W - P - 32, xW = xX - 130, xS = xW - 150, xT = xS - 120, withTeam = d.table.some(r => r.team);
+    let y = yTable + 14 + 38;
+    text('Игрок', xL, y, `600 22px ${TXT}`, '#8a948e'); text('Сеты', xS, y, `600 22px ${TXT}`, '#8a948e', 'right');
+    if (withTeam) text('Команда', xT, y, `600 22px ${TXT}`, '#8a948e', 'right');
+    text('Победы', xW, y, `600 22px ${TXT}`, '#8a948e', 'right'); text('XP', xX, y, `600 22px ${TXT}`, '#8a948e', 'right');
+    const line = yy => { g.fillStyle = '#EEF1EE'; g.fillRect(xL, yy, xX - xL, 2); };
+    y = yTable + 14 + 56;
+    d.table.forEach(r => {
+      line(y);
+      text(r.name, xL, y + 38, `600 27px ${TXT}`, '#000', 'left', (withTeam ? xT - 130 : xS - 110) - xL);
+      if (withTeam && r.team) text(r.team, xT, y + 38, `700 27px ${TXT}`, '#000', 'right');
+      text(r.sets, xS, y + 38, `400 27px ${TXT}`, MUTED, 'right');
+      text(r.wins, xW, y + 38, `400 27px ${TXT}`, MUTED, 'right');
+      text('+' + r.xp, xX, y + 38, `800 28px ${DISP}`, INK, 'right');
+      y += 55;
+    });
+    if (d.hidden) { line(y); text(`и ещё ${d.hidden} ${plural(d.hidden, 'игрок', 'игрока', 'игроков')} 🙌`, xL, y + 38, `400 27px ${TXT}`, MUTED); }
+  }
+  let x = P + text('Следующая игра: ', P, yFoot, `400 26px ${TXT}`, MUTED);
+  text('суббота, ' + d.next, x, yFoot, `700 26px ${TXT}`, '#000');
+  if (d.rating) {
+    const w2 = (g.font = `700 26px ${TXT}`, g.measureText(d.rating).width);
+    text(d.rating, W - P, yFoot, `700 26px ${TXT}`, '#000', 'right');
+    text('Рейтинг силы: ', W - P - w2, yFoot, `400 26px ${TXT}`, MUTED, 'right');
+  }
+  return cv.toDataURL('image/png');
+}
+
+// Редактор сета из журнала: счёт, кто в какой команде, сколько китайцев.
+function viewSetEdit() {
+  const e = S.setEdit, a = e.t1, b = e.t2;
+  const ids = [...new Set([...S.present, ...e.r1, ...e.r2])].sort((x, y) => pname(x).localeCompare(pname(y), 'ru'));
+  const side = id => e.r1.includes(id) ? a : e.r2.includes(id) ? b : '';
+  const sc = (k, t) => `<label class="scb t${t}"><span class="tn">Команда ${t}</span>
+    <input id="e_${k}" type="number" inputmode="numeric" min="0" max="60" value="${e[k]}"></label>`;
+  const gl = (k, t, r) => `<div class="gline"><span class="gl">Китайцев в ${t}</span>
+    <button class="mini" data-a="eg-" data-k="${k}">−</button><b>${e[k]}</b><button class="mini" data-a="eg+" data-k="${k}">+</button>
+    <span class="sv">всего ${r.length + e[k]} из ${S.teamSize}</span></div>`;
+  return {
+    action: `<button class="btn" data-a="eCancel">Отмена</button><button class="btn go" data-a="eSave">Сохранить сет</button>`,
+    html: `<h2>Сет №${e.num}</h2>
+    <p class="lead">Поправь счёт, составы или китайцев. Победитель определяется по счёту.</p>
+    <div class="board2">${sc('sc1', a)}${sc('sc2', b)}</div>
+    <p class="hint" id="ewin">${winText(e)}</p>
+    <div class="panel pad">${gl('g1', a, e.r1)}${gl('g2', b, e.r2)}</div>
+    <p class="sub-h">Кто в какой команде</p>
+    <div class="panel">${ids.map(id => `<div class="trow"><span class="nm">${esc(pname(id))}</span><span class="tpick">${
+      [a, b].map(t => `<button class="tb t${t} ${side(id) === t ? 'on' : ''}" data-a="emove" data-id="${esc(id)}" data-t="${t}">${t}</button>`).join('')
+    }<button class="tb off ${side(id) ? '' : 'on'}" data-a="emove" data-id="${esc(id)}" data-t="" aria-label="Не играл в этом сете">—</button></span></div>`).join('')}</div>
+    <button class="del ${S.armed === 'edel' ? 'armed' : ''}" data-a="edel">${S.armed === 'edel' ? 'Точно удалить сет?' : 'Удалить сет'}</button>` };
+}
+const winText = e => e.sc1 === e.sc2 ? 'Счёт равный, так не бывает' : `Победила команда ${e.sc1 > e.sc2 ? e.t1 : e.t2}`;
+
+function saveSetEdit() {
+  const e = S.setEdit;
+  e.sc1 = Number($('#e_sc1').value); e.sc2 = Number($('#e_sc2').value);
+  if (!(e.sc1 >= 0 && e.sc2 >= 0) || e.sc1 === e.sc2) { toast('Проверь счёт: он не может быть равным'); return; }
+  const p = { id: e.id, date: e.date, num: e.num, t1: e.t1, t2: e.t2, r1: e.r1, g1: e.g1, r2: e.r2, g2: e.g2,
+    winner: e.sc1 > e.sc2 ? e.t1 : e.t2, sc1: e.sc1, sc2: e.sc2 };
+  const i = S.sets.findIndex(x => x.id === e.id);
+  if (i >= 0) S.sets[i] = Object.assign({}, S.sets[i], p);
+  enqueue({ kind: 'supd', payload: p });
+  S.setEdit = null; S.sum = null; S.armed = null;
+  toast(`Сет №${p.num} исправлен`);
+  render(); window.scrollTo(0, 0);
+}
+
+function viewBoard() {
+  if (!S.stats) { loadStats(); return { html: '<h2>Рейтинг</h2><div class="empty">Считаю…</div>' }; }
+  if (S.stats.error) return { html: `<h2>Рейтинг</h2><div class="panel pad"><div class="warn">${esc(S.stats.error)}</div></div>` };
+  const st = S.stats, admin = S.role !== 'player', myId = S.me && S.me.id;
+  const tabs = [['xp', 'Активность'], ['rating', 'Сила'], ['streak', 'Серии'], ['train', 'Тренировки']];
+  let rows = [], note = '';
+  if (S.board === 'train') {   // тренировки: отдельный трек, в субботний опыт не входят
+    rows = st.xp.filter(r => r.trQ > 0).sort((a, b) => b.trQ - a.trQ || b.trAll - a.trAll)
+      .map(r => ({ id: r.id, name: r.name, v: r.trQ, u: plural(r.trQ, 'тренировка', 'тренировки', 'тренировок') }));
+    note = `Тренировки за сезон ${quarterName(st.quarter)}. Это отдельный зачёт, в субботний опыт он не входит.`;
+  }
+  if (S.board === 'xp') {
+    rows = st.xp.filter(r => r.xpQ > 0).map(r => ({ id: r.id, name: r.name, v: r.xpQ, u: 'XP' }));
+    note = `Опыт за сезон ${quarterName(st.quarter)}. Каждый квартал всё начинается заново.`;
+  }
+  if (S.board === 'streak') {
+    rows = st.xp.filter(r => r.streak > 0).sort((a, b) => b.streak - a.streak || b.best - a.best)
+      .map(r => ({ id: r.id, name: r.name, v: r.streak, u: plural(r.streak, 'суббота', 'субботы', 'суббот') + ' подряд' }));
+    note = 'Сколько суббот подряд без пропусков. Один пропуск в месяц серию не сбрасывает.';
+  }
+  if (S.board === 'rating') {
+    rows = st.rating.filter(r => !r.calib).map(r => ({ id: r.id, name: r.name, v: r.r, u: '' }));
+    const c = st.rating.filter(r => r.calib).length;
+    note = `Сила считается по победам с учётом составов.${c ? ` Ещё ${c} ${plural(c, 'игрок', 'игрока', 'игроков')} в калибровке: нужно сыграть 10 сетов.` : ''}`;
+  }
+  if (S.board === 'rating' && S.scope === 'all') {
+    rows = rows.concat(st.rating.filter(r => r.calib).map(r => ({ id: r.id, name: r.name, v: `${r.sets}/10`, u: 'калибровка', cal: true })));
+  }
+  let empty = 'Пока пусто. Появится после первой завершённой игры.';
+  if (S.board === 'rating' && !rows.length && st.rating.length) {   // все ещё в калибровке: показываем, кто ближе всех
+    const near = st.rating.slice().sort((a, b) => b.sets - a.sets).slice(0, 3).map(r => `${esc(r.name)} ${r.sets}/10`).join(', ');
+    empty = `Все пока в калибровке, нужно сыграть 10 сетов.<br>Ближе всех: ${near}.`;
+  }
+  const shown = S.scope === 'top' ? rows.slice(0, 10) : rows;
+  let place = 0;
+  const list = shown.map(r => {
+    if (!r.cal) place++;
+    return `<div class="lb top${r.cal ? 0 : place} ${r.cal ? 'cal' : ''} ${r.id === myId ? 'me' : ''}"><span class="pl">${r.cal ? '–' : place}</span>
+    <span class="nm">${esc(r.name)}</span><span class="v">${r.v}<small>${esc(r.u)}</small></span></div>`;
+  }).join('');
+  return { html: `<h2>Рейтинг</h2>
+    <div class="tabs2">${tabs.map(([k, t]) => `<button data-a="boardTab" data-k="${k}" class="${S.board === k ? 'on' : ''}">${t}</button>`).join('')}</div>
+    <p class="lead">${note}</p>
+    <button class="lnk help" data-a="help">${S.help ? 'Скрыть объяснение' : 'Как считается?'}</button>
+    ${S.help ? `<div class="panel pad helpbox">${HELP[S.board]}</div>` : ''}
+    <div class="scope"><button data-a="scope" data-k="top" class="${S.scope === 'top' ? 'on' : ''}">Топ-10</button><button data-a="scope" data-k="all" class="${S.scope === 'all' ? 'on' : ''}">Все игроки (${rows.length})</button></div>
+    <div class="panel">${list || `<div class="empty">${empty}</div>`}</div>` };
+}
+
+const HELP = {
+  xp: 'За каждый приход на игру <b>+10 XP</b>, за каждую победу в сете <b>+1 XP</b>.<br>Со 2-й субботы подряд добавляется бонус серии: +2, потом +3 и так до +5.<br>Игра попадает в зачёт после «Завершить игру». Каждый квартал опыт начинается заново, а уровень копится всё время.',
+  rating: 'Все начинают с <b>1000</b>. После каждого сета победители получают очки, проигравшие теряют столько же.<br>Сколько, зависит от силы составов: обыграть сильных выгоднее, чем слабых, а крупная победа даёт чуть больше. Китайцы считаются за 1000 и сами не меняются.<br>Первые <b>10 сетов</b> это калибровка: очки меняются быстрее, а в таблицу игрок попадает после 10-го сета.',
+  streak: 'Серия это сколько суббот подряд ты приходишь на игру.<br>Одна пропущенная суббота из четырёх серию не рвёт.<br>Со 2-й субботы подряд серия даёт бонус к опыту, до +5 XP.',
+  train: 'Каждая тренировка добавляет 1 в этот зачёт.<br>Он идёт отдельно и в субботний опыт не входит.'
+};
+
+function viewMe() {
+  if (!S.stats) { loadStats(); return { html: '<h2>Мои итоги</h2><div class="empty">Считаю…</div>' }; }
+  const v = statsView(S.stats.me || null, '');
+  v.html += myBalHtml();
+  return v;
+}
+
+// Шапка с фото и именем над итогами во вкладке «Я» у админа.
+function selfHead(p) {
+  const photo = p.photoNew || p.photo, initials = ((p.lastName || ' ')[0] + (p.firstName || ' ')[0]).trim();
+  return `<div class="photo"><div class="ava" style="${photo ? `background-image:url('${esc(photo)}')` : ''}">${photo ? '' : esc(initials)}</div>
+    <b>${esc((p.lastName + ' ' + p.firstName).trim())}</b></div>`;
+}
+
+function viewSelf() {
+  if (!S.self.loaded) { loadSelf(); return { html: '<h2>Я</h2><div class="empty">Загружаю…</div>' }; }
+  if (S.self.err) return { html: `<h2>Я</h2><div class="panel pad">${esc(S.self.err)}</div>` };
+  if (!S.me || !S.me.id) return viewMyCard();   // ещё не заполнял: сразу анкета
+  if (S.self.edit) {
+    const v = viewMyCard();
+    v.action = `<button class="btn" data-a="selfCancel">Отмена</button>` + v.action;
+    return v;
+  }
+  if (!S.self.stats) { loadSelfStats(); return { html: '<h2>Я</h2><div class="empty">Считаю…</div>' }; }
+  if (S.self.stats.error) return { html: `<h2>Я</h2><div class="panel pad"><div class="warn">${esc(S.self.stats.error)}</div></div>` };
+  const v = statsView(S.self.stats.me || null, selfHead(S.me));
+  v.action = `<button class="btn" data-a="selfEdit">Моя карточка</button>`;
+  return v;
+}
+
+function statsView(m, head) {
+  if (!m) return { html: `${head || '<h2>Мои итоги</h2>'}<div class="panel pad">Итоги появятся после первой игры. Увидимся в субботу!</div>` };
+  const L = level(m.xpAll);
+  const pct = L.next ? Math.round(100 * (m.xpAll - L.from) / (L.next - L.from)) : 100;
+  const tr = m.trQ || 0;
+  const tile = (cls, b, span) => `<button class="st ${cls}" data-a="toCal"><b>${b}</b><span>${span}</span></button>`;
+  const sq = m.setsQ || 0;
+  const rating = m.calib
+    ? tile('w2', `${m.sets} из 10`, `сетов сыграно. После 10-го появится твой рейтинг силы`)
+    : tile('w2', m.r, `рейтинг силы, за сезон ${m.dQ >= 0 ? '+' : ''}${m.dQ}`);
+  const train = tile('', tr, `${plural(tr, 'тренировка', 'тренировки', 'тренировок')} за сезон`);
+  return { html: `${head || ''}
+    <div class="hero"><div class="lvl">Уровень «${L.name}»</div>
+      <div class="xp">${m.xpQ}<small>XP за сезон</small></div>
+      <div class="bar"><i style="width:${pct}%"></i></div>
+      <div class="next">${L.next ? `До уровня «${L.nextName}» ещё ${L.next - m.xpAll} XP` : 'Это максимальный уровень'}</div></div>
+    <div class="stats3">
+      ${tile('', m.arrQ, `${plural(m.arrQ, 'приход', 'прихода', 'приходов')} на игру за сезон`)}
+      ${tile('', m.streak, `${plural(m.streak, 'суббота', 'субботы', 'суббот')} подряд, лучшая серия ${m.best}`)}
+      ${tile('', m.winsQ, `${plural(m.winsQ, 'победа', 'победы', 'побед')} из ${sq} ${plural(sq, 'сета', 'сетов', 'сетов')} за сезон`)}
+      ${train}${rating}
+    </div>
+    <p class="tilehint">Нажми на плитку, откроется календарь с твоей последней игрой</p>
+    ${m.placeXp ? `<div class="panel pad">Ты на ${m.placeXp}-м месте по активности за сезон.</div>` : ''}` };
+}
+
+function viewCard(p, adminMode) {
+  const f = (id, label, val, extra) => `<label class="f">${label}<input id="${id}" value="${esc(val || '')}" autocomplete="off" ${extra || ''}></label>`;
+  const initials = ((p.lastName || ' ')[0] + (p.firstName || ' ')[0]).trim();
+  const photo = p.photoNew || p.photo;
+  return `
+  <h2>${adminMode ? (p.id ? 'Карточка игрока' : 'Новый игрок') : 'Моя карточка'}</h2>
+  <p class="lead">${adminMode ? 'Фамилия и имя обязательны, остальное можно дополнить позже.' : 'Заполни один раз, чтобы попасть в рейтинг и итоги субботы.'}</p>
+  <div class="panel pad">
+    <div class="photo"><div class="ava" id="ava" style="${photo ? `background-image:url('${esc(photo)}')` : ''}">${photo ? '' : esc(initials)}</div>
+      <label>${photo ? 'Заменить фото' : 'Загрузить фото'}<input type="file" id="f_photo" accept="image/*"></label></div>
+    ${f('f_last', 'Фамилия', p.lastName)}
+    ${f('f_first', 'Имя', p.firstName)}
+    ${f('f_mid', 'Отчество', p.middleName)}
+    ${f('f_dob', 'Дата рождения', p.dob, 'type="date"')}
     ${f('f_tg', 'Ник в Telegram', p.tg ? '@' + p.tg : '', 'placeholder="@username" autocapitalize="off"')}
     ${f('f_wx', 'Ник в WeChat', p.wx, 'autocapitalize="off"')}
     <label class="f">Позиция на площадке, если знаешь
